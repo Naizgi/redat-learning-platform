@@ -205,6 +205,49 @@ class AuthController extends Controller
         ]);
     }
 
+
+
+
+    // In AuthController
+public function resendOtp(Request $request)
+{
+    $request->validate([
+        'email' => 'required|email|exists:users,email',
+    ]);
+    
+    $user = User::where('email', $request->email)->first();
+    
+    // Generate new OTP
+    $otp = rand(100000, 999999);
+    
+    EmailOtp::updateOrCreate(
+        ['user_id' => $user->id],
+        [
+            'otp' => $otp,
+            'expires_at' => now()->addMinutes(10),
+            'verified_at' => null, // Reset verification
+        ]
+    );
+    
+    // Send email
+    try {
+        \Illuminate\Support\Facades\Mail::to($user->email)
+            ->send(new \App\Mail\SendOtpMail($otp, $user->name));
+    } catch (\Exception $e) {
+        \Log::error('Resend OTP email failed', ['error' => $e->getMessage()]);
+        return response()->json([
+            'success' => false,
+            'message' => 'OTP generated but email failed. Contact support.',
+            'debug_otp' => $otp // Remove in production
+        ], 500);
+    }
+    
+    return response()->json([
+        'success' => true,
+        'message' => 'New OTP sent to your email.',
+    ]);
+}
+
     /* ================= LOGIN ================= */
     public function login(Request $request)
     {
