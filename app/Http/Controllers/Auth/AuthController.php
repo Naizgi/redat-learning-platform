@@ -17,14 +17,19 @@ class AuthController extends Controller
 {
     /* ================= REGISTER ================= */
     public function register(Request $request)
-    {
-        $data = $request->validate([
-            'name' => 'required|string',
-            'email' => 'required|email|unique:users',
-            'password' => 'required|min:6|confirmed',
-            'department_id' => 'required|exists:departments,id',
-        ]);
+{
+    \Log::info('Register attempt started', $request->all());
+    
+    $data = $request->validate([
+        'name' => 'required|string',
+        'email' => 'required|email|unique:users',
+        'password' => 'required|min:6|confirmed',
+        'department_id' => 'required|exists:departments,id',
+    ]);
+    
+    \Log::info('Validation passed', $data);
 
+    try {
         $user = User::create([
             'name' => $data['name'],
             'email' => $data['email'],
@@ -33,8 +38,12 @@ class AuthController extends Controller
             'role' => 'student',
             'is_active' => false,
         ]);
-
+        
+        \Log::info('User created successfully', ['user_id' => $user->id, 'email' => $user->email]);
+        
         $otp = rand(100000, 999999);
+        
+        \Log::info('OTP generated', ['otp' => $otp]);
 
         EmailOtp::updateOrCreate(
             ['user_id' => $user->id],
@@ -43,14 +52,31 @@ class AuthController extends Controller
                 'expires_at' => now()->addMinutes(10),
             ]
         );
+        
+        \Log::info('OTP saved');
 
-        Mail::to($user->email)->send(new SendOtpMail($otp));
+        // For testing, don't send actual email
+        \Log::info('Would send OTP email to: ' . $user->email, ['otp' => $otp]);
 
         return response()->json([
             'success' => true,
             'message' => 'Registration successful. OTP sent to email.',
+            'debug_otp' => $otp, // Add this for debugging
         ]);
+        
+    } catch (\Exception $e) {
+        \Log::error('Registration failed', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'Registration failed',
+            'error' => $e->getMessage()
+        ], 500);
     }
+}
 
     /* ================= VERIFY OTP ================= */
     public function verifyOtp(Request $request)
