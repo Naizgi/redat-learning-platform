@@ -16,89 +16,108 @@ use Carbon\Carbon;
 class AuthController extends Controller
 {
     /* ================= REGISTER ================= */
-  public function register(Request $request)
+ public function register(Request $request)
 {
-    // Enable query logging
-    \Illuminate\Support\Facades\DB::enableQueryLog();
+    \Log::info('=== REGISTER REQUEST START ===');
     
-    \Log::info('=== REGISTER DEBUG START ===');
-    \Log::info('Request data:', $request->all());
+    // Method 1: Get raw content and try to decode
+    $rawContent = $request->getContent();
+    \Log::info('Raw request content:', ['content' => $rawContent]);
+    
+    // Method 2: Check headers
+    $contentType = $request->headers->get('Content-Type');
+    \Log::info('Content-Type header:', ['content-type' => $contentType]);
+    
+    // Method 3: Try different ways to get data
+    $data = [];
+    
+    // Try JSON first
+    if ($request->isJson() && !empty($rawContent)) {
+        $data = json_decode($rawContent, true) ?? [];
+        \Log::info('Data from JSON decode:', $data);
+    }
+    
+    // If JSON empty, try form data
+    if (empty($data)) {
+        $data = $request->all();
+        \Log::info('Data from request->all():', $data);
+    }
+    
+    // If still empty, try input()
+    if (empty($data)) {
+        $data = [
+            'name' => $request->input('name'),
+            'email' => $request->input('email'),
+            'password' => $request->input('password'),
+            'password_confirmation' => $request->input('password_confirmation'),
+            'department_id' => $request->input('department_id'),
+        ];
+        \Log::info('Data from individual inputs:', $data);
+    }
+    
+    // Remove null values for logging clarity
+    $filteredData = array_filter($data, function($value) {
+        return $value !== null;
+    });
+    \Log::info('Final data to validate:', $filteredData);
+    
+    // If still empty, return error
+    if (empty(array_filter($data))) {
+        \Log::error('No data received in request');
+        return response()->json([
+            'success' => false,
+            'message' => 'No data received. Please check your request format.',
+            'debug' => [
+                'content_type' => $contentType,
+                'raw_content' => $rawContent,
+                'is_json' => $request->isJson(),
+                'headers' => $request->headers->all()
+            ]
+        ], 400);
+    }
+    
+    // Now validate
+    $validator = \Illuminate\Support\Facades\Validator::make($data, [
+        'name' => 'required|string',
+        'email' => 'required|email|unique:users',
+        'password' => 'required|min:6|confirmed',
+        'department_id' => 'required|exists:departments,id',
+    ]);
+    
+    if ($validator->fails()) {
+        \Log::error('Validation failed with data:', $data);
+        \Log::error('Validation errors:', $validator->errors()->toArray());
+        
+        return response()->json([
+            'success' => false,
+            'errors' => $validator->errors(),
+            'debug' => [
+                'received_data' => $data,
+                'content_type' => $contentType,
+                'raw_content' => substr($rawContent, 0, 500) // First 500 chars
+            ]
+        ], 422);
+    }
+    
+    $validated = $validator->validated();
+    \Log::info('Validation passed:', $validated);
     
     try {
-        // Validate
-        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
-            'name' => 'required|string',
-            'email' => 'required|email|unique:users',
-            'password' => 'required|min:6|confirmed',
-            'department_id' => 'required|exists:departments,id',
+        // Create user
+        $user = User::create([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'password' => $validated['password'], // Let model cast hash it
+            'department_id' => $validated['department_id'],
+            'role' => 'student',
+            'is_active' => false,
         ]);
         
-        if ($validator->fails()) {
-            \Log::error('Validation failed:', $validator->errors()->toArray());
-            return response()->json([
-                'success' => false,
-                'errors' => $validator->errors()
-            ], 422);
-        }
+        \Log::info('User created:', ['id' => $user->id, 'email' => $user->email]);
         
-        $data = $validator->validated();
-        \Log::info('Validation passed:', $data);
-        
-        // Check department
-        $department = \App\Models\Department::find($data['department_id']);
-        if (!$department) {
-            \Log::error('Department not found:', ['department_id' => $data['department_id']]);
-            return response()->json([
-                'success' => false,
-                'message' => 'Department not found'
-            ], 422);
-        }
-        
-        \Log::info('Department found:', $department->toArray());
-        
-        // Create user - METHOD 1: Direct assignment
-        \Log::info('Creating user...');
-        $user = new User();
-        $user->name = $data['name'];
-        $user->email = $data['email'];
-        $user->password = \Illuminate\Support\Facades\Hash::make($data['password']);
-        $user->department_id = $data['department_id'];
-        $user->role = 'student';
-        $user->is_active = false;
-        
-        \Log::info('User before save:', $user->toArray());
-        
-        // Save and check result
-        $saved = $user->save();
-        \Log::info('Save result:', ['saved' => $saved, 'user_id' => $user->id ?? 'null']);
-        
-        if (!$saved || !$user->id) {
-            \Log::error('User save failed!');
-            $queries = \Illuminate\Support\Facades\DB::getQueryLog();
-            \Log::error('Last query:', end($queries));
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to save user',
-                'debug' => [
-                    'saved' => $saved,
-                    'user_id' => $user->id ?? 'null',
-                    'queries' => $queries
-                ]
-            ], 500);
-        }
-        
-        \Log::info('User created successfully:', ['id' => $user->id, 'email' => $user->email]);
-        
-        // Get all executed queries
-        $queries = \Illuminate\Support\Facades\DB::getQueryLog();
-        \Log::info('Executed queries:', $queries);
-        
-        // Create OTP
+        // Generate OTP
         $otp = rand(100000, 999999);
-        \Log::info('Generated OTP:', ['otp' => $otp]);
         
-        // Save OTP
         EmailOtp::updateOrCreate(
             ['user_id' => $user->id],
             [
@@ -107,70 +126,39 @@ class AuthController extends Controller
             ]
         );
         
-        \Log::info('OTP saved to database');
+        \Log::info('OTP created and saved:', ['otp' => $otp]);
         
-        // ========== SEND EMAIL ==========
+        // Try to send email (but don't fail registration if email fails)
         try {
-            \Log::info('Attempting to send OTP email to: ' . $user->email);
-            
-            // Option 1: Using queue (recommended for production)
-            if (config('queue.default') !== 'sync') {
-                \Illuminate\Support\Facades\Mail::to($user->email)
-                    ->queue(new \App\Mail\SendOtpMail($otp, $user->name));
-                \Log::info('Email queued for sending');
-            } 
-            // Option 2: Send immediately
-            else {
-                \Illuminate\Support\Facades\Mail::to($user->email)
-                    ->send(new \App\Mail\SendOtpMail($otp, $user->name));
-                \Log::info('Email sent immediately');
-            }
-            
-            \Log::info('Email sending process completed');
-            
+            \Log::info('Attempting to send email to: ' . $user->email);
+            \Illuminate\Support\Facades\Mail::to($user->email)
+                ->send(new \App\Mail\SendOtpMail($otp, $user->name));
+            \Log::info('Email sent successfully');
         } catch (\Exception $emailException) {
-            \Log::error('Email sending failed:', [
+            \Log::error('Email sending failed (but registration succeeded):', [
                 'error' => $emailException->getMessage(),
-                'trace' => $emailException->getTraceAsString()
+                'otp' => $otp // Log OTP so user can verify manually
             ]);
-            
-            // Don't fail registration if email fails, just log it
-            // User can request OTP resend later
-            \Log::info('Registration succeeded but email failed. OTP: ' . $otp);
         }
-        // ========== END EMAIL ==========
-        
-        \Log::info('=== REGISTER DEBUG END - SUCCESS ===');
         
         return response()->json([
             'success' => true,
-            'message' => 'Registration successful. OTP sent to email.',
-            'debug' => [
-                'user_id' => $user->id,
-                'email' => $user->email,
-                'otp' => $otp, // Remove in production
-                'queries_count' => count($queries)
-            ]
+            'message' => 'Registration successful. ' . 
+                        (isset($emailException) ? 'Check logs for OTP.' : 'OTP sent to email.'),
+            'user_id' => $user->id,
+            'email' => $user->email,
+            'debug_otp' => $otp // Remove in production
         ]);
         
     } catch (\Exception $e) {
-        \Log::error('Registration exception:', [
-            'message' => $e->getMessage(),
-            'file' => $e->getFile(),
-            'line' => $e->getLine(),
+        \Log::error('Registration failed:', [
+            'error' => $e->getMessage(),
             'trace' => $e->getTraceAsString()
         ]);
         
-        $queries = \Illuminate\Support\Facades\DB::getQueryLog();
-        \Log::error('Queries before exception:', $queries);
-        
         return response()->json([
             'success' => false,
-            'message' => 'Registration failed',
-            'error' => $e->getMessage(),
-            'debug' => [
-                'queries' => $queries
-            ]
+            'message' => 'Registration failed: ' . $e->getMessage()
         ], 500);
     }
 }
