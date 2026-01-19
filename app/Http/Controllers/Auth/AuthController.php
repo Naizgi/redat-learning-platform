@@ -16,35 +16,89 @@ use Carbon\Carbon;
 class AuthController extends Controller
 {
     /* ================= REGISTER ================= */
-    public function register(Request $request)
+   public function register(Request $request)
 {
-    \Log::info('Register attempt started', $request->all());
+    // Enable query logging
+    \Illuminate\Support\Facades\DB::enableQueryLog();
     
-    $data = $request->validate([
-        'name' => 'required|string',
-        'email' => 'required|email|unique:users',
-        'password' => 'required|min:6|confirmed',
-        'department_id' => 'required|exists:departments,id',
-    ]);
+    \Log::info('=== REGISTER DEBUG START ===');
+    \Log::info('Request data:', $request->all());
     
-    \Log::info('Validation passed', $data);
-
     try {
-        $user = User::create([
-            'name' => $data['name'],
-            'email' => $data['email'],
-            'password' => Hash::make($data['password']),
-            'department_id' => $data['department_id'],
-            'role' => 'student',
-            'is_active' => false,
+        // Validate
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'name' => 'required|string',
+            'email' => 'required|email|unique:users',
+            'password' => 'required|min:6|confirmed',
+            'department_id' => 'required|exists:departments,id',
         ]);
         
-        \Log::info('User created successfully', ['user_id' => $user->id, 'email' => $user->email]);
+        if ($validator->fails()) {
+            \Log::error('Validation failed:', $validator->errors()->toArray());
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
         
+        $data = $validator->validated();
+        \Log::info('Validation passed:', $data);
+        
+        // Check department
+        $department = \App\Models\Department::find($data['department_id']);
+        if (!$department) {
+            \Log::error('Department not found:', ['department_id' => $data['department_id']]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Department not found'
+            ], 422);
+        }
+        
+        \Log::info('Department found:', $department->toArray());
+        
+        // Create user - METHOD 1: Direct assignment
+        \Log::info('Creating user...');
+        $user = new User();
+        $user->name = $data['name'];
+        $user->email = $data['email'];
+        $user->password = \Illuminate\Support\Facades\Hash::make($data['password']);
+        $user->department_id = $data['department_id'];
+        $user->role = 'student';
+        $user->is_active = false;
+        
+        \Log::info('User before save:', $user->toArray());
+        
+        // Save and check result
+        $saved = $user->save();
+        \Log::info('Save result:', ['saved' => $saved, 'user_id' => $user->id ?? 'null']);
+        
+        if (!$saved || !$user->id) {
+            \Log::error('User save failed!');
+            $queries = \Illuminate\Support\Facades\DB::getQueryLog();
+            \Log::error('Last query:', end($queries));
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to save user',
+                'debug' => [
+                    'saved' => $saved,
+                    'user_id' => $user->id ?? 'null',
+                    'queries' => $queries
+                ]
+            ], 500);
+        }
+        
+        \Log::info('User created successfully:', ['id' => $user->id, 'email' => $user->email]);
+        
+        // Get all executed queries
+        $queries = \Illuminate\Support\Facades\DB::getQueryLog();
+        \Log::info('Executed queries:', $queries);
+        
+        // Create OTP
         $otp = rand(100000, 999999);
+        \Log::info('Generated OTP:', ['otp' => $otp]);
         
-        \Log::info('OTP generated', ['otp' => $otp]);
-
+        // Save OTP
         EmailOtp::updateOrCreate(
             ['user_id' => $user->id],
             [
@@ -53,27 +107,37 @@ class AuthController extends Controller
             ]
         );
         
-        \Log::info('OTP saved');
-
-        // For testing, don't send actual email
-        \Log::info('Would send OTP email to: ' . $user->email, ['otp' => $otp]);
-
+        \Log::info('=== REGISTER DEBUG END - SUCCESS ===');
+        
         return response()->json([
             'success' => true,
             'message' => 'Registration successful. OTP sent to email.',
-            'debug_otp' => $otp, // Add this for debugging
+            'debug' => [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'otp' => $otp, // Remove in production
+                'queries_count' => count($queries)
+            ]
         ]);
         
     } catch (\Exception $e) {
-        \Log::error('Registration failed', [
-            'error' => $e->getMessage(),
+        \Log::error('Registration exception:', [
+            'message' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
             'trace' => $e->getTraceAsString()
         ]);
+        
+        $queries = \Illuminate\Support\Facades\DB::getQueryLog();
+        \Log::error('Queries before exception:', $queries);
         
         return response()->json([
             'success' => false,
             'message' => 'Registration failed',
-            'error' => $e->getMessage()
+            'error' => $e->getMessage(),
+            'debug' => [
+                'queries' => $queries
+            ]
         ], 500);
     }
 }
