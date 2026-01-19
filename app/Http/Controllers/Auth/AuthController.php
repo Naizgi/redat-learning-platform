@@ -16,7 +16,7 @@ use Carbon\Carbon;
 class AuthController extends Controller
 {
     /* ================= REGISTER ================= */
-   public function register(Request $request)
+  public function register(Request $request)
 {
     // Enable query logging
     \Illuminate\Support\Facades\DB::enableQueryLog();
@@ -106,6 +106,39 @@ class AuthController extends Controller
                 'expires_at' => now()->addMinutes(10),
             ]
         );
+        
+        \Log::info('OTP saved to database');
+        
+        // ========== SEND EMAIL ==========
+        try {
+            \Log::info('Attempting to send OTP email to: ' . $user->email);
+            
+            // Option 1: Using queue (recommended for production)
+            if (config('queue.default') !== 'sync') {
+                \Illuminate\Support\Facades\Mail::to($user->email)
+                    ->queue(new \App\Mail\SendOtpMail($otp, $user->name));
+                \Log::info('Email queued for sending');
+            } 
+            // Option 2: Send immediately
+            else {
+                \Illuminate\Support\Facades\Mail::to($user->email)
+                    ->send(new \App\Mail\SendOtpMail($otp, $user->name));
+                \Log::info('Email sent immediately');
+            }
+            
+            \Log::info('Email sending process completed');
+            
+        } catch (\Exception $emailException) {
+            \Log::error('Email sending failed:', [
+                'error' => $emailException->getMessage(),
+                'trace' => $emailException->getTraceAsString()
+            ]);
+            
+            // Don't fail registration if email fails, just log it
+            // User can request OTP resend later
+            \Log::info('Registration succeeded but email failed. OTP: ' . $otp);
+        }
+        // ========== END EMAIL ==========
         
         \Log::info('=== REGISTER DEBUG END - SUCCESS ===');
         
