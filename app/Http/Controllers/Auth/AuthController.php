@@ -16,34 +16,43 @@ use Carbon\Carbon;
 class AuthController extends Controller
 {
     /* ================= REGISTER ================= */
- public function register(Request $request)
+public function register(Request $request)
 {
-    \Log::info('=== REGISTER REQUEST START ===');
+    \Log::info('=== REGISTER REQUEST START ===', [
+        'ip' => $request->ip(),
+        'user_agent' => $request->userAgent()
+    ]);
     
-    // Method 1: Get raw content and try to decode
+    // ===== RATE LIMITING =====
+    // Prevent spam registrations
+    $rateLimitKey = 'register:' . $request->ip();
+    $maxAttempts = 5; // 5 registrations per hour per IP
+    $decayMinutes = 60;
+    
+    if (\Illuminate\Support\Facades\RateLimiter::tooManyAttempts($rateLimitKey, $maxAttempts)) {
+        $retryAfter = \Illuminate\Support\Facades\RateLimiter::availableIn($rateLimitKey);
+        \Log::warning('Rate limit exceeded', ['ip' => $request->ip(), 'retry_after' => $retryAfter]);
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'Too many registration attempts. Please try again in ' . ceil($retryAfter/60) . ' minutes.',
+            'retry_after' => $retryAfter
+        ], 429);
+    }
+    
+    // ===== DATA EXTRACTION (KEEP YOUR EXISTING CODE) =====
     $rawContent = $request->getContent();
-    \Log::info('Raw request content:', ['content' => $rawContent]);
-    
-    // Method 2: Check headers
     $contentType = $request->headers->get('Content-Type');
-    \Log::info('Content-Type header:', ['content-type' => $contentType]);
-    
-    // Method 3: Try different ways to get data
     $data = [];
     
-    // Try JSON first
     if ($request->isJson() && !empty($rawContent)) {
         $data = json_decode($rawContent, true) ?? [];
-        \Log::info('Data from JSON decode:', $data);
     }
     
-    // If JSON empty, try form data
     if (empty($data)) {
         $data = $request->all();
-        \Log::info('Data from request->all():', $data);
     }
     
-    // If still empty, try input()
     if (empty($data)) {
         $data = [
             'name' => $request->input('name'),
@@ -52,113 +61,199 @@ class AuthController extends Controller
             'password_confirmation' => $request->input('password_confirmation'),
             'department_id' => $request->input('department_id'),
         ];
-        \Log::info('Data from individual inputs:', $data);
     }
     
-    // Remove null values for logging clarity
-    $filteredData = array_filter($data, function($value) {
-        return $value !== null;
-    });
-    \Log::info('Final data to validate:', $filteredData);
-    
-    // If still empty, return error
-    if (empty(array_filter($data))) {
-        \Log::error('No data received in request');
-        return response()->json([
-            'success' => false,
-            'message' => 'No data received. Please check your request format.',
-            'debug' => [
-                'content_type' => $contentType,
-                'raw_content' => $rawContent,
-                'is_json' => $request->isJson(),
-                'headers' => $request->headers->all()
-            ]
-        ], 400);
+    // ===== EMAIL SANITIZATION =====
+    // Clean email to prevent issues
+    if (isset($data['email'])) {
+        $data['email'] = strtolower(trim($data['email']));
+        
+        // Check for disposable/temporary emails (optional)
+        $disposableDomains = ['tempmail.com', '10minutemail.com', 'guerrillamail.com'];
+        $emailDomain = substr(strrchr($data['email'], "@"), 1);
+        
+        if (in_array($emailDomain, $disposableDomains)) {
+            \Log::warning('Disposable email attempt', ['email' => $data['email']]);
+            // You can choose to block or allow - here we just log it
+        }
     }
     
-    // Now validate
+    // ===== VALIDATION (ENHANCED) =====
     $validator = \Illuminate\Support\Facades\Validator::make($data, [
-        'name' => 'required|string',
-        'email' => 'required|email|unique:users',
-        'password' => 'required|min:6|confirmed',
+        'name' => 'required|string|max:255|min:2',
+        'email' => [
+            'required',
+            'email:rfc,dns', // Strict email validation
+            'unique:users',
+            'max:255'
+        ],
+        'password' => [
+            'required',
+            'min:8', // Increased from 6 to 8 for better security
+            'confirmed',
+            'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/' // At least 1 uppercase, 1 lowercase, 1 number
+        ],
         'department_id' => 'required|exists:departments,id',
+    ], [
+        'password.regex' => 'Password must contain at least one uppercase letter, one lowercase letter, and one number.',
     ]);
     
     if ($validator->fails()) {
-        \Log::error('Validation failed with data:', $data);
-        \Log::error('Validation errors:', $validator->errors()->toArray());
+        \Log::warning('Validation failed', [
+            'errors' => $validator->errors()->toArray(),
+            'ip' => $request->ip()
+        ]);
+        
+        // Increment rate limiter on failed validation
+        \Illuminate\Support\Facades\RateLimiter::hit($rateLimitKey, $decayMinutes * 60);
         
         return response()->json([
             'success' => false,
             'errors' => $validator->errors(),
-            'debug' => [
-                'received_data' => $data,
-                'content_type' => $contentType,
-                'raw_content' => substr($rawContent, 0, 500) // First 500 chars
-            ]
+            'message' => 'Validation failed. Please check your input.'
         ], 422);
     }
     
     $validated = $validator->validated();
-    \Log::info('Validation passed:', $validated);
+    \Log::info('Validation passed', ['email' => $validated['email']]);
     
+    // ===== TRANSACTION - ATOMIC OPERATION =====
     try {
+        // Use database transaction to ensure data consistency
+        \DB::beginTransaction();
+        
         // Create user
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
-            'password' => $validated['password'], // Let model cast hash it
+            'password' => $validated['password'],
             'department_id' => $validated['department_id'],
             'role' => 'student',
             'is_active' => false,
+            'registration_ip' => $request->ip(), // Store IP for security
+            'registered_at' => now(),
         ]);
         
-        \Log::info('User created:', ['id' => $user->id, 'email' => $user->email]);
+        \Log::info('User created', [
+            'id' => $user->id, 
+            'email' => $user->email,
+            'department_id' => $user->department_id
+        ]);
         
         // Generate OTP
         $otp = rand(100000, 999999);
         
-        EmailOtp::updateOrCreate(
+        // Use firstOrCreate to avoid duplicates
+        $emailOtp = EmailOtp::firstOrCreate(
             ['user_id' => $user->id],
             [
                 'otp' => $otp,
                 'expires_at' => now()->addMinutes(10),
+                'attempts' => 0, // Track OTP attempts
             ]
         );
         
-        \Log::info('OTP created and saved:', ['otp' => $otp]);
-        
-        // Try to send email (but don't fail registration if email fails)
-        try {
-            \Log::info('Attempting to send email to: ' . $user->email);
-            \Illuminate\Support\Facades\Mail::to($user->email)
-                ->send(new \App\Mail\SendOtpMail($otp, $user->name));
-            \Log::info('Email sent successfully');
-        } catch (\Exception $emailException) {
-            \Log::error('Email sending failed (but registration succeeded):', [
-                'error' => $emailException->getMessage(),
-                'otp' => $otp // Log OTP so user can verify manually
+        // If OTP already existed, update it
+        if ($emailOtp->wasRecentlyCreated === false) {
+            $emailOtp->update([
+                'otp' => $otp,
+                'expires_at' => now()->addMinutes(10),
+                'verified_at' => null,
+                'attempts' => 0,
             ]);
         }
         
-        return response()->json([
-            'success' => true,
-            'message' => 'Registration successful. ' . 
-                        (isset($emailException) ? 'Check logs for OTP.' : 'OTP sent to email.'),
+        \Log::info('OTP created', [
             'user_id' => $user->id,
-            'email' => $user->email,
-            'debug_otp' => $otp // Remove in production
+            'otp' => $otp,
+            'expires_at' => $emailOtp->expires_at
         ]);
         
+        // ===== EMAIL SENDING WITH ENHANCED ERROR HANDLING =====
+        $emailSent = false;
+        $emailError = null;
+        
+        try {
+            \Log::info('Attempting to send OTP email', [
+                'to' => $user->email,
+                'from' => config('mail.from.address')
+            ]);
+            
+            // Queue the email for better performance and deliverability
+            \Illuminate\Support\Facades\Mail::to($user->email)
+                ->queue(new \App\Mail\SendOtpMail($otp, $user->name));
+            
+            $emailSent = true;
+            \Log::info('OTP email queued successfully');
+            
+        } catch (\Exception $emailException) {
+            $emailError = $emailException->getMessage();
+            \Log::error('Email queueing failed', [
+                'error' => $emailError,
+                'user_id' => $user->id,
+                'email' => $user->email
+            ]);
+            
+            // Try immediate send as fallback
+            try {
+                \Log::info('Attempting immediate email send as fallback');
+                \Illuminate\Support\Facades\Mail::to($user->email)
+                    ->send(new \App\Mail\SendOtpMail($otp, $user->name));
+                
+                $emailSent = true;
+                \Log::info('Immediate email send successful');
+                
+            } catch (\Exception $immediateEmailException) {
+                $emailError = $immediateEmailException->getMessage();
+                \Log::error('Immediate email send also failed', [
+                    'error' => $emailError,
+                    'otp' => $otp // Log OTP for manual verification
+                ]);
+            }
+        }
+        
+        // ===== COMMIT TRANSACTION =====
+        \DB::commit();
+        
+        // ===== SUCCESS RESPONSE =====
+        $response = [
+            'success' => true,
+            'message' => 'Registration successful. ' . 
+                        ($emailSent ? 'OTP has been sent to your email.' : 'Please check your email for OTP (may be in spam).'),
+            'user_id' => $user->id,
+            'email' => $user->email,
+            'email_sent' => $emailSent,
+            'next_step' => 'verify_otp',
+        ];
+        
+        // Only include debug OTP in non-production environments
+        if (app()->environment('local', 'staging')) {
+            $response['debug_otp'] = $otp;
+            $response['otp_expires'] = $emailOtp->expires_at->format('Y-m-d H:i:s');
+        }
+        
+        // Increment rate limiter on successful registration
+        \Illuminate\Support\Facades\RateLimiter::hit($rateLimitKey, $decayMinutes * 60);
+        
+        return response()->json($response);
+        
     } catch (\Exception $e) {
-        \Log::error('Registration failed:', [
+        // ===== ROLLBACK ON ERROR =====
+        \DB::rollBack();
+        
+        \Log::error('Registration transaction failed', [
             'error' => $e->getMessage(),
-            'trace' => $e->getTraceAsString()
+            'trace' => $e->getTraceAsString(),
+            'data' => isset($validated) ? ['email' => $validated['email']] : []
         ]);
+        
+        // Still increment rate limiter on error
+        \Illuminate\Support\Facades\RateLimiter::hit($rateLimitKey, $decayMinutes * 60);
         
         return response()->json([
             'success' => false,
-            'message' => 'Registration failed: ' . $e->getMessage()
+            'message' => 'Registration failed due to a system error. Please try again.',
+            'error_detail' => app()->environment('local') ? $e->getMessage() : null
         ], 500);
     }
 }
