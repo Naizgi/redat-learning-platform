@@ -30,7 +30,7 @@ Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/password/forgot', [PasswordResetController::class, 'sendResetLink']);
     Route::post('/password/reset', [PasswordResetController::class, 'reset']);
-    
+    Route::post('/payments/submit', [PaymentController::class, 'submit']);
 });
 
 Route::middleware('auth:sanctum')->group(function () {
@@ -45,7 +45,7 @@ Route::middleware('auth:sanctum')->group(function () {
 /* ================= STUDENT ROUTES ================= */
 Route::middleware(['auth:sanctum','role:student'])->prefix('student')->group(function () {
     Route::get('/payments', [PaymentController::class, 'index']);
-    Route::post('/payments/submit', [PaymentController::class, 'submit']);
+  
 });
 
 /* ================= ADMIN PAYMENT APPROVAL ================= */
