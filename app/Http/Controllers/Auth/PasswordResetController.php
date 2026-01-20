@@ -20,7 +20,8 @@ class PasswordResetController extends Controller
             'email' => 'required|email|exists:users,email',
         ]);
 
-        $token = Str::random(6); // 6-char OTP
+        // Generate 6-digit numeric OTP (000000 to 999999)
+        $token = sprintf('%06d', mt_rand(0, 999999));
 
         // Store or update token
         DB::table('password_reset_tokens')->updateOrInsert(
