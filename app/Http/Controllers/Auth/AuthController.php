@@ -259,34 +259,118 @@ public function register(Request $request)
 }
 
     /* ================= VERIFY OTP ================= */
-    public function verifyOtp(Request $request)
-    {
-        $request->validate([
-            'email' => 'required|email',
-            'otp' => 'required',
-        ]);
-
-        $user = User::whereEmail($request->email)->firstOrFail();
-
-        $otp = EmailOtp::where('user_id', $user->id)
-            ->where('otp', $request->otp)
+/* ================= VERIFY OTP ================= */
+public function verifyOtp(Request $request)
+{
+    // FIRST validate the request
+    $validated = $request->validate([
+        'email' => 'required|email|exists:users,email',
+        'otp' => 'required|numeric|digits:6',
+    ]);
+    
+    // Clean the email
+    $email = strtolower(trim($validated['email']));
+    $otp = $validated['otp'];
+    
+    \Log::info('Verifying OTP', [
+        'email' => $email,
+        'otp' => $otp
+    ]);
+    
+    try {
+        // Find user
+        $user = User::where('email', $email)->first();
+        
+        if (!$user) {
+            \Log::warning('User not found for OTP verification', ['email' => $email]);
+            return response()->json([
+                'success' => false,
+                'message' => 'User not found',
+                'errors' => ['email' => ['The provided email does not exist.']]
+            ], 404);
+        }
+        
+        \Log::info('User found', ['user_id' => $user->id]);
+        
+        // Find OTP
+        $emailOtp = EmailOtp::where('user_id', $user->id)
+            ->where('otp', $otp)
             ->whereNull('verified_at')
             ->first();
-
-        if (!$otp || Carbon::now()->gt($otp->expires_at)) {
-            throw ValidationException::withMessages([
-                'otp' => 'Invalid or expired OTP',
+        
+        if (!$emailOtp) {
+            \Log::warning('OTP not found or already verified', [
+                'user_id' => $user->id,
+                'otp' => $otp
             ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid OTP',
+                'errors' => ['otp' => ['Invalid verification code.']]
+            ], 422);
         }
-
-        $otp->update(['verified_at' => now()]);
-        $user->update(['email_verified_at' => now()]);
+        
+        // Check if OTP expired
+        if (Carbon::now()->gt($emailOtp->expires_at)) {
+            \Log::warning('OTP expired', [
+                'user_id' => $user->id,
+                'expires_at' => $emailOtp->expires_at,
+                'current_time' => now()
+            ]);
+            
+            // Delete expired OTP
+            $emailOtp->delete();
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'OTP expired',
+                'errors' => ['otp' => ['Verification code has expired. Please request a new one.']]
+            ], 422);
+        }
+        
+        \Log::info('OTP verified successfully', [
+            'user_id' => $user->id,
+            'otp_id' => $emailOtp->id
+        ]);
+        
+        // Mark OTP as verified
+        $emailOtp->update([
+            'verified_at' => now(),
+            'verified_ip' => $request->ip()
+        ]);
+        
+        // Update user email verification
+        $user->update([
+            'email_verified_at' => now()
+        ]);
+        
+        \Log::info('Email verified for user', [
+            'user_id' => $user->id,
+            'email' => $user->email
+        ]);
 
         return response()->json([
             'success' => true,
             'message' => 'Email verified successfully. Wait for admin activation.',
+            'user_id' => $user->id,
+            'email' => $user->email
         ]);
+        
+    } catch (\Exception $e) {
+        \Log::error('OTP verification failed', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+            'email' => $email
+        ]);
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'Verification failed due to a system error.',
+            'errors' => ['system' => ['An unexpected error occurred. Please try again.']]
+        ], 500);
     }
+}
 
 
 
@@ -294,43 +378,89 @@ public function register(Request $request)
     // In AuthController
 public function resendOtp(Request $request)
 {
-    $request->validate([
+    // Validate and clean email
+    $validated = $request->validate([
         'email' => 'required|email|exists:users,email',
     ]);
     
-    $user = User::where('email', $request->email)->first();
+    $email = strtolower(trim($validated['email']));
     
-    // Generate new OTP
-    $otp = rand(100000, 999999);
+    \Log::info('Resending OTP', ['email' => $email]);
     
-    EmailOtp::updateOrCreate(
-        ['user_id' => $user->id],
-        [
-            'otp' => $otp,
-            'expires_at' => now()->addMinutes(10),
-            'verified_at' => null, // Reset verification
-        ]
-    );
-    
-    // Send email
     try {
-        \Illuminate\Support\Facades\Mail::to($user->email)
-            ->send(new \App\Mail\SendOtpMail($otp, $user->name));
+        $user = User::where('email', $email)->first();
+        
+        if (!$user) {
+            \Log::warning('User not found for OTP resend', ['email' => $email]);
+            return response()->json([
+                'success' => false,
+                'message' => 'User not found',
+                'errors' => ['email' => ['The provided email does not exist.']]
+            ], 404);
+        }
+        
+        \Log::info('User found for OTP resend', ['user_id' => $user->id]);
+        
+        // Generate new OTP
+        $otp = rand(100000, 999999);
+        
+        EmailOtp::updateOrCreate(
+            ['user_id' => $user->id],
+            [
+                'otp' => $otp,
+                'expires_at' => now()->addMinutes(10),
+                'verified_at' => null,
+            ]
+        );
+        
+        \Log::info('New OTP generated', [
+            'user_id' => $user->id,
+            'otp' => $otp,
+            'expires_at' => now()->addMinutes(10)
+        ]);
+        
+        // Send email
+        try {
+            \Illuminate\Support\Facades\Mail::to($user->email)
+                ->send(new \App\Mail\SendOtpMail($otp, $user->name));
+                
+            \Log::info('Resend OTP email sent', ['user_id' => $user->id]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Resend OTP email failed', [
+                'error' => $e->getMessage(),
+                'user_id' => $user->id
+            ]);
+            
+            // Still return success but with email warning
+            return response()->json([
+                'success' => true,
+                'message' => 'New OTP generated but email delivery failed. Please contact support.',
+                'debug_otp' => app()->environment('local', 'staging') ? $otp : null,
+                'warning' => 'Email delivery failed'
+            ]);
+        }
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'New OTP sent to your email.',
+            'debug_otp' => app()->environment('local', 'staging') ? $otp : null
+        ]);
+        
     } catch (\Exception $e) {
-        \Log::error('Resend OTP email failed', ['error' => $e->getMessage()]);
+        \Log::error('Resend OTP failed', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+            'email' => $email
+        ]);
+        
         return response()->json([
             'success' => false,
-            'message' => 'OTP generated but email failed. Contact support.',
-            'debug_otp' => $otp // Remove in production
+            'message' => 'Failed to resend OTP. Please try again.',
+            'errors' => ['system' => ['An unexpected error occurred.']]
         ], 500);
     }
-    
-    return response()->json([
-        'success' => true,
-        'message' => 'New OTP sent to your email.',
-    ]);
 }
-
     /* ================= LOGIN ================= */
     public function login(Request $request)
     {
