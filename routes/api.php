@@ -21,7 +21,7 @@ use App\Http\Controllers\Admin\AdminUserController; // <-- New User Management C
 
 
 Route::get('departments', [DepartmentController::class, 'index']);
-
+Route::post('student/payments/submit', [PaymentController::class, 'submit']);
 /* ================= AUTH ROUTES ================= */
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
@@ -30,7 +30,7 @@ Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/password/forgot', [PasswordResetController::class, 'sendResetLink']);
     Route::post('/password/reset', [PasswordResetController::class, 'reset']);
-    Route::post('/payments/submit', [PaymentController::class, 'submit']);
+    
 });
 
 Route::middleware('auth:sanctum')->group(function () {
