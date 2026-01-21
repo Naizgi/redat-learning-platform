@@ -25,6 +25,16 @@ class PaymentDenied extends Mailable
                     ->view('emails.payment-denied')
                     ->with(array_merge($this->mailData, [
                         'denial_reason' => $this->denialReason
-                    ]));
+                    ]))
+                    ->withSwiftMessage(function ($message) {
+                        // Add important headers for deliverability
+                        $headers = $message->getHeaders();
+                        $headers->addTextHeader('Precedence', 'bulk');
+                        $headers->addTextHeader('Auto-Submitted', 'auto-generated');
+                        $headers->addTextHeader('X-Auto-Response-Suppress', 'OOF, AutoReply');
+                        $headers->addTextHeader('List-Unsubscribe', '<mailto:support@redatlearninghub.com>');
+                        $headers->addTextHeader('List-Unsubscribe-Post', 'List-Unsubscribe=One-Click');
+                        $headers->addTextHeader('X-PM-Message-Stream', 'outbound');
+                    });
     }
 }
