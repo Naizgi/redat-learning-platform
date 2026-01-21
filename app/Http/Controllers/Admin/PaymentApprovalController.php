@@ -9,6 +9,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
 
 class PaymentApprovalController extends Controller
 {
@@ -141,6 +142,15 @@ class PaymentApprovalController extends Controller
             $templateExists = view()->exists('emails.payment-approved');
             Log::info('Template emails.payment-approved exists: ' . ($templateExists ? 'YES' : 'NO'));
             
+            // Ensure dates are Carbon instances
+            $subscriptionStart = $subscription->start_date instanceof \Carbon\Carbon 
+                ? $subscription->start_date 
+                : Carbon::parse($subscription->start_date);
+                
+            $subscriptionEnd = $subscription->end_date instanceof \Carbon\Carbon 
+                ? $subscription->end_date 
+                : Carbon::parse($subscription->end_date);
+            
             $mailData = [
                 'user_name' => $user->name,
                 'payment_amount' => number_format($payment->amount, 2),
@@ -149,8 +159,8 @@ class PaymentApprovalController extends Controller
                 'payment_reference' => $payment->reference ?? 'PAY-' . str_pad($payment->id, 6, '0', STR_PAD_LEFT),
                 'payment_date' => $payment->created_at->format('F j, Y'),
                 'approval_date' => now()->format('F j, Y'),
-                'subscription_start' => $subscription->start_date->format('F j, Y'),
-                'subscription_end' => $subscription->end_date->format('F j, Y'),
+                'subscription_start' => $subscriptionStart->format('F j, Y'),
+                'subscription_end' => $subscriptionEnd->format('F j, Y'),
                 'subscription_duration' => '1 Year',
                 'app_url' => config('app.url', 'https://redatlearninghub.com'),
             ];
@@ -236,72 +246,60 @@ class PaymentApprovalController extends Controller
     }
 
     /**
-     * Test email functionality
+     * Simplified version that will definitely work
      */
-    public function testEmail(Request $request)
+    private function sendSimpleApprovalEmail(Payment $payment, Subscription $subscription)
     {
         try {
-            $testEmail = $request->input('email', 'test@example.com');
+            $user = $payment->user;
             
-            Log::info('Testing email to: ' . $testEmail);
+            $message = "Hello {$user->name},\n\n" .
+                      "Your payment of {$payment->amount} {$payment->currency} has been approved!\n\n" .
+                      "Your subscription is now active until: " . 
+                      ($subscription->end_date instanceof \Carbon\Carbon 
+                        ? $subscription->end_date->format('F j, Y') 
+                        : date('F j, Y', strtotime($subscription->end_date))) . "\n\n" .
+                      "Thank you for choosing Redat Learning Hub!";
             
-            // Test simple email first
-            Mail::raw('Test email from Redat Learning Hub', function ($message) use ($testEmail) {
-                $message->to($testEmail)
-                        ->subject('Test Email - Redat Learning Hub');
+            Mail::raw($message, function ($message) use ($user) {
+                $message->to($user->email)
+                        ->subject('Payment Approved - Redat Learning Hub');
             });
             
-            if (count(Mail::failures()) > 0) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Email test failed',
-                    'failures' => Mail::failures()
-                ], 500);
-            }
-            
-            // Test template email
-            $mailData = [
-                'user_name' => 'Test User',
-                'payment_amount' => '100.00',
-                'payment_currency' => 'USD',
-                'payment_method' => 'Test Method',
-                'payment_reference' => 'TEST-123456',
-                'payment_date' => now()->format('F j, Y'),
-                'approval_date' => now()->format('F j, Y'),
-                'subscription_start' => now()->format('F j, Y'),
-                'subscription_end' => now()->addYear()->format('F j, Y'),
-                'subscription_duration' => '1 Year',
-                'app_url' => config('app.url', 'https://redatlearninghub.com'),
-            ];
-            
-            Mail::send('emails.payment-approved', $mailData, function ($message) use ($testEmail) {
-                $message->to($testEmail)
-                        ->subject('Test Template Email - Payment Approved');
-            });
-            
-            if (count(Mail::failures()) > 0) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Template email test failed',
-                    'failures' => Mail::failures()
-                ], 500);
-            }
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'Email test completed successfully'
-            ]);
+            Log::info('Simple approval email sent to: ' . $user->email);
+            return true;
             
         } catch (\Exception $e) {
-            Log::error('Email test failed: ' . $e->getMessage());
-            Log::error('Stack trace: ' . $e->getTraceAsString());
+            Log::error('Failed to send simple approval email: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Simplified version that will definitely work
+     */
+    private function sendSimpleDenialEmail(Payment $payment, $denialReason)
+    {
+        try {
+            $user = $payment->user;
             
-            return response()->json([
-                'success' => false,
-                'message' => 'Email test failed',
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ], 500);
+            $message = "Hello {$user->name},\n\n" .
+                      "Your payment of {$payment->amount} {$payment->currency} has been denied.\n\n" .
+                      "Reason: {$denialReason}\n\n" .
+                      "Please submit a new payment request if needed.\n\n" .
+                      "Thank you,\nRedat Learning Hub";
+            
+            Mail::raw($message, function ($message) use ($user) {
+                $message->to($user->email)
+                        ->subject('Payment Denied - Redat Learning Hub');
+            });
+            
+            Log::info('Simple denial email sent to: ' . $user->email);
+            return true;
+            
+        } catch (\Exception $e) {
+            Log::error('Failed to send simple denial email: ' . $e->getMessage());
+            return false;
         }
     }
 }
