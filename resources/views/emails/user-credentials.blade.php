@@ -2,131 +2,129 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Account Credentials</title>
+    <title>{{ $type === 'new' ? 'Welcome to ' . ($siteName ?? 'Our Platform') : 'Your Account Information' }}</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             line-height: 1.6;
             color: #333;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
             max-width: 600px;
             margin: 0 auto;
-            padding: 20px;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
         .header {
-            background: linear-gradient(135deg, #4361ee 0%, #7209b7 100%);
-            color: white;
-            padding: 30px;
             text-align: center;
-            border-radius: 10px 10px 0 0;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #4f46e5;
+        }
+        .header h1 {
+            color: #4f46e5;
+            margin: 0;
         }
         .content {
-            background: #f8fafc;
-            padding: 30px;
-            border: 1px solid #e2e8f0;
-            border-top: none;
-            border-radius: 0 0 10px 10px;
+            margin-bottom: 30px;
         }
-        .credentials-box {
-            background: white;
-            border: 2px dashed #4361ee;
+        .info-box {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
             padding: 20px;
             border-radius: 8px;
             margin: 20px 0;
         }
-        .info-box {
-            background: #e6f7ff;
-            border-left: 4px solid #1890ff;
-            padding: 15px;
+        .credentials {
+            background: #f0f9ff;
+            border: 1px solid #0ea5e9;
+            padding: 20px;
+            border-radius: 8px;
             margin: 20px 0;
         }
-        .warning-box {
-            background: #fff7e6;
-            border-left: 4px solid #faad14;
-            padding: 15px;
-            margin: 20px 0;
-        }
-        .button {
+        .btn {
             display: inline-block;
-            background: linear-gradient(135deg, #06d6a0 0%, #4895ef 100%);
+            background: #4f46e5;
             color: white;
-            padding: 12px 30px;
+            padding: 12px 24px;
             text-decoration: none;
-            border-radius: 5px;
-            font-weight: bold;
+            border-radius: 6px;
             margin: 20px 0;
         }
         .footer {
             text-align: center;
             margin-top: 30px;
-            color: #64748b;
-            font-size: 12px;
-        }
-        .password {
-            font-family: 'Courier New', monospace;
-            font-size: 18px;
-            font-weight: bold;
-            color: #4361ee;
-            background: #f1f5f9;
-            padding: 10px;
-            border-radius: 4px;
-            display: inline-block;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+            color: #6b7280;
+            font-size: 14px;
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Welcome to {{ $data['siteName'] }}!</h1>
-        <p>Your account has been {{ $data['type'] === 'new' ? 'created' : ($data['type'] === 'reset' ? 'password reset' : 'updated') }}</p>
-    </div>
-    
-    <div class="content">
-        <p>Hello <strong>{{ $data['name'] }}</strong>,</p>
-        
-        @if($data['type'] === 'new')
-            <p>Welcome to {{ $data['siteName'] }}! Your account has been successfully created.</p>
-        @elseif($data['type'] === 'reset')
-            <p>Your password has been reset by the administrator.</p>
-        @elseif($data['type'] === 'updated')
-            <p>Your account information has been updated.</p>
-        @else
-            <p>Here are your account credentials:</p>
-        @endif
-        
-        <div class="credentials-box">
-            <h3>Your Login Credentials:</h3>
-            <p><strong>Email:</strong> {{ $data['email'] }}</p>
-            <p><strong>Password:</strong> <span class="password">{{ $data['password'] }}</span></p>
-            <p><strong>Role:</strong> {{ ucfirst($data['role']) }}</p>
+    <div class="container">
+        <div class="header">
+            <h1>{{ $siteName ?? 'Learning Platform' }}</h1>
+            <p>{{ $type === 'new' ? 'Welcome to Our Platform' : 'Account Information' }}</p>
         </div>
         
-        <div class="info-box">
-            <p><strong>Important:</strong> Please login and change your password immediately after your first login for security.</p>
+        <div class="content">
+            @if($type === 'new')
+                <h2>Welcome, {{ $name }}!</h2>
+                <p>Your account has been created by the administrator. Here are your login credentials:</p>
+            @elseif($type === 'reset')
+                <h2>Password Reset</h2>
+                <p>Your password has been reset. Please use the new credentials below:</p>
+            @elseif($type === 'update')
+                <h2>Account Updated</h2>
+                <p>Your account information has been updated:</p>
+            @else
+                <h2>Account Credentials</h2>
+                <p>Here are your account credentials:</p>
+            @endif
+            
+            <div class="info-box">
+                <h3>Account Details</h3>
+                <p><strong>Name:</strong> {{ $name }}</p>
+                <p><strong>Email:</strong> {{ $email }}</p>
+                <p><strong>Role:</strong> {{ ucfirst($role) }}</p>
+            </div>
+            
+            <div class="credentials">
+                <h3>Login Credentials</h3>
+                <p><strong>Email:</strong> {{ $email }}</p>
+                @if($password !== 'Use your existing password')
+                    <p><strong>Password:</strong> <strong style="color: #0ea5e9;">{{ $password }}</strong></p>
+                    <p><em>Please change this password after your first login.</em></p>
+                @else
+                    <p><strong>Password:</strong> Use your existing password</p>
+                @endif
+            </div>
+            
+            <div style="text-align: center;">
+                <a href="{{ $loginUrl }}" class="btn">Login to Your Account</a>
+            </div>
+            
+            @if($password !== 'Use your existing password')
+                <div style="background: #fef3c7; border: 1px solid #f59e0b; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                    <strong>Security Notice:</strong>
+                    <p>For security reasons, please change your password immediately after logging in.</p>
+                </div>
+            @endif
         </div>
         
-        <div style="text-align: center;">
-            <a href="{{ $data['loginUrl'] }}" class="button">Login to Your Account</a>
+        <div class="footer">
+            <p>If you have any questions, please contact our support team:</p>
+            <p><a href="mailto:{{ $supportEmail ?? 'support@example.com' }}">{{ $supportEmail ?? 'support@example.com' }}</a></p>
+            <p style="margin-top: 20px; font-size: 12px;">
+                This is an automated message. Please do not reply to this email.
+            </p>
         </div>
-        
-        <div class="warning-box">
-            <p><strong>Security Notice:</strong></p>
-            <ul>
-                <li>Keep your credentials confidential</li>
-                <li>Do not share your password with anyone</li>
-                <li>Always logout after your session</li>
-                <li>Use a strong, unique password when you change it</li>
-            </ul>
-        </div>
-        
-        <p>If you have any questions or need assistance, please contact our support team at <a href="mailto:{{ $data['supportEmail'] }}">{{ $data['supportEmail'] }}</a>.</p>
-        
-        <p>Best regards,<br>
-        The {{ $data['siteName'] }} Team</p>
-    </div>
-    
-    <div class="footer">
-        <p>This is an automated message. Please do not reply to this email.</p>
-        <p>&copy; {{ date('Y') }} {{ $data['siteName'] }}. All rights reserved.</p>
     </div>
 </body>
 </html>

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\UserCredentialsMail;
@@ -15,122 +16,205 @@ class AdminUserController extends Controller
     // List all users
     public function index(Request $request)
     {
-        $users = User::query()
-            ->when($request->search, fn($q) => $q->where('name', 'like', "%{$request->search}%")
-                                                  ->orWhere('email', 'like', "%{$request->search}%"))
-            ->orderBy('created_at', 'desc')
-            ->paginate(20);
+        try {
+            $users = User::query()
+                ->when($request->search, fn($q) => $q->where('name', 'like', "%{$request->search}%")
+                                                      ->orWhere('email', 'like', "%{$request->search}%"))
+                ->orderBy('created_at', 'desc')
+                ->paginate(20);
 
-        return response()->json($users);
+            return response()->json([
+                'success' => true,
+                'data' => $users,
+                'message' => 'Users retrieved successfully'
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch users',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     // Show single user
     public function show(User $user)
     {
-        return response()->json($user);
+        return response()->json([
+            'success' => true,
+            'data' => $user,
+            'message' => 'User retrieved successfully'
+        ]);
     }
 
     // Create a new user
     public function store(Request $request)
     {
-        $request->validate([
-            'name'     => 'required|string|max:255',
-            'email'    => 'required|email|unique:users,email',
-            'password' => 'required|string|min:6',
-            'role'     => ['required', Rule::in(['student', 'instructor', 'admin'])],
-        ]);
+        try {
+            $validator = Validator::make($request->all(), [
+                'name' => 'required|string|max:255',
+                'email' => 'required|email|unique:users,email',
+                'password' => 'required|string|min:6',
+                'password_confirmation' => 'sometimes|string|min:6|same:password',
+                'role' => ['required', Rule::in(['student', 'instructor', 'admin'])],
+                'send_credentials' => 'sometimes|boolean',
+            ]);
 
-        $user = User::create([
-            'name'     => $request->name,
-            'email'    => $request->email,
-            'password' => Hash::make($request->password),
-            'role'     => $request->role,
-            'email_verified_at' => now(), // Auto-verify since admin is creating
-            'is_active' => true, // Auto-activate
-        ]);
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => $validator->errors(),
+                    'message' => 'Validation failed'
+                ], 422);
+            }
 
-        // Send credentials email
-        $this->sendCredentialsEmail($user, $request->password);
+            $user = User::create([
+                'name' => $request->name,
+                'email' => $request->email,
+                'password' => Hash::make($request->password),
+                'role' => $request->role,
+                'email_verified_at' => now(), // Auto-verify since admin is creating
+                'is_active' => true, // Auto-activate
+            ]);
 
-        return response()->json([
-            'message' => 'User created successfully. Credentials have been sent to the user\'s email.',
-            'user'    => $user
-        ], 201);
+            // Send credentials email if requested
+            if ($request->boolean('send_credentials', true)) {
+                $this->sendCredentialsEmail($user, $request->password, 'new');
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => $request->boolean('send_credentials', true) 
+                    ? 'User created successfully. Credentials email sent.'
+                    : 'User created successfully.',
+                'data' => $user
+            ], 201);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create user',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     // Update user
     public function update(Request $request, User $user)
     {
-        $request->validate([
-            'name'      => 'sometimes|string|max:255',
-            'email'     => ['sometimes','email', Rule::unique('users')->ignore($user->id)],
-            'password'  => 'sometimes|string|min:6',
-            'role'      => ['sometimes', Rule::in(['student', 'instructor', 'admin'])],
-            'is_active' => 'sometimes|boolean',
-            'send_credentials' => 'sometimes|boolean', // Add flag to send credentials
-        ]);
+        try {
+            $validator = Validator::make($request->all(), [
+                'name' => 'sometimes|string|max:255',
+                'email' => ['sometimes','email', Rule::unique('users')->ignore($user->id)],
+                'password' => 'sometimes|string|min:6',
+                'password_confirmation' => 'sometimes|string|min:6|same:password',
+                'role' => ['sometimes', Rule::in(['student', 'instructor', 'admin'])],
+                'is_active' => 'sometimes|boolean',
+                'send_credentials' => 'sometimes|boolean',
+            ]);
 
-        $passwordChanged = false;
-        $newPassword = null;
-
-        // Existing updates...
-        if ($request->has('name')) {
-            $user->name = $request->name;
-        }
-        if ($request->has('email')) {
-            $user->email = $request->email;
-        }
-        if ($request->has('password')) {
-            $user->password = Hash::make($request->password);
-            $passwordChanged = true;
-            $newPassword = $request->password;
-        }
-        if ($request->has('role')) {
-            $user->role = $request->role;
-        }
-        
-        // Add is_active update
-        if ($request->has('is_active')) {
-            $user->is_active = $request->is_active;
-            
-            // Auto-verify email if activating for the first time
-            if ($request->is_active && !$user->email_verified_at) {
-                $user->email_verified_at = now();
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => $validator->errors(),
+                    'message' => 'Validation failed'
+                ], 422);
             }
-        }
 
-        $user->save();
+            $passwordChanged = false;
+            $newPassword = null;
 
-        // Send credentials email if requested or if password was changed
-        if ($request->boolean('send_credentials') || $passwordChanged) {
-            $this->sendCredentialsEmail(
-                $user, 
-                $newPassword ?? 'Use your existing password', // Show existing password if not changed
-                $passwordChanged ? 'updated' : 'existing'
-            );
+            if ($request->has('name')) {
+                $user->name = $request->name;
+            }
             
-            $message = 'User updated successfully' . 
-                      ($passwordChanged || $request->boolean('send_credentials') 
-                          ? '. Credentials have been sent to the user\'s email.' 
-                          : '');
-        } else {
-            $message = 'User updated successfully';
-        }
+            if ($request->has('email') && $request->email !== $user->email) {
+                $user->email = $request->email;
+                // Reset email verification if email changed
+                if ($user->email_verified_at) {
+                    $user->email_verified_at = null;
+                }
+            }
+            
+            if ($request->has('password')) {
+                $user->password = Hash::make($request->password);
+                $passwordChanged = true;
+                $newPassword = $request->password;
+            }
+            
+            if ($request->has('role')) {
+                $user->role = $request->role;
+            }
+            
+            if ($request->has('is_active')) {
+                $user->is_active = $request->boolean('is_active');
+                
+                // Auto-verify email if activating for the first time
+                if ($request->boolean('is_active') && !$user->email_verified_at) {
+                    $user->email_verified_at = now();
+                }
+            }
 
-        return response()->json([
-            'message' => $message,
-            'user'    => $user
-        ]);
+            $user->save();
+
+            // Send credentials email if requested or if password was changed
+            if ($request->boolean('send_credentials') || $passwordChanged) {
+                $this->sendCredentialsEmail(
+                    $user, 
+                    $passwordChanged ? $newPassword : 'Use your existing password',
+                    $passwordChanged ? 'reset' : 'update'
+                );
+                
+                $message = 'User updated successfully' . 
+                          ($passwordChanged || $request->boolean('send_credentials') 
+                              ? '. Credentials email sent.' 
+                              : '');
+            } else {
+                $message = 'User updated successfully';
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'data' => $user
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update user',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     // Delete user
     public function destroy(User $user)
     {
-        $user->delete();
-
-        return response()->json([
-            'message' => 'User deleted successfully'
-        ]);
+        try {
+            // Prevent deleting yourself
+            if ($user->id === auth()->id()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You cannot delete your own account.'
+                ], 403);
+            }
+            
+            $user->delete();
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'User deleted successfully'
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete user',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -151,14 +235,14 @@ class AdminUserController extends Controller
                 'email' => $user->email,
                 'password' => $password,
                 'role' => $user->role,
-                'loginUrl' => config('app.frontend_url') . '/login',
+                'loginUrl' => config('app.frontend_url', config('app.url')) . '/login',
                 'type' => $type,
                 'siteName' => config('app.name', 'Learning Platform'),
                 'supportEmail' => config('mail.support_email', 'support@example.com'),
             ];
 
-            // Send email
-            Mail::to($user->email)->send(new \App\Mail\UserCredentialsMail($emailData));
+            // Send email - if mail fails, just log it
+            Mail::to($user->email)->send(new UserCredentialsMail($emailData));
 
             \Log::info('Credentials email sent successfully', ['user_id' => $user->id]);
 
@@ -170,7 +254,7 @@ class AdminUserController extends Controller
                 'trace' => $e->getTraceAsString()
             ]);
             
-            // Don't throw error, just log it - admin can resend if needed
+            // Don't throw error - just log it
         }
     }
 
@@ -179,12 +263,20 @@ class AdminUserController extends Controller
      */
     public function resendCredentials(Request $request, User $user)
     {
-        $request->validate([
-            'new_password' => 'sometimes|string|min:6',
-            'generate_password' => 'sometimes|boolean',
-        ]);
-
         try {
+            $validator = Validator::make($request->all(), [
+                'new_password' => 'sometimes|string|min:6',
+                'generate_password' => 'sometimes|boolean',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => $validator->errors(),
+                    'message' => 'Validation failed'
+                ], 422);
+            }
+
             $passwordChanged = false;
             $newPassword = null;
 
@@ -213,8 +305,15 @@ class AdminUserController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Credentials have been resent to ' . $user->email,
-                'new_password' => $request->boolean('generate_password') ? $newPassword : null,
+                'data' => [
+                    'user_id' => $user->id,
+                    'email_sent' => true,
+                    'password_changed' => $passwordChanged,
+                    'new_password' => $passwordChanged ? $newPassword : null
+                ],
+                'message' => $passwordChanged 
+                    ? 'New credentials sent to user email.'
+                    : 'Credentials email sent with existing password.'
             ]);
 
         } catch (\Exception $e) {
