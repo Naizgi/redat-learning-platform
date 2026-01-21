@@ -102,6 +102,7 @@ Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(functio
     Route::post('users', [AdminUserController::class,'store']);         // Add new user
     Route::put('users/{user}', [AdminUserController::class,'update']);  // Update user
     Route::delete('users/{user}', [AdminUserController::class,'destroy']); // Delete user
+    Route::post('users/{user}/resend-credentials', [AdminUserController::class,'resendCredentials']); // Resend credentials
 });
 
 
