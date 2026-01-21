@@ -8,8 +8,7 @@ use App\Models\Subscription;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
-use App\Mail\PaymentApproved;
-use App\Mail\PaymentDenied;
+use Illuminate\Support\Facades\Log;
 
 class PaymentApprovalController extends Controller
 {
@@ -54,7 +53,7 @@ class PaymentApprovalController extends Controller
             $payment->user->update(['is_active' => true]);
 
             // Send approval notification email
-            $this->sendApprovalEmail($payment);
+            $emailSent = $this->sendApprovalEmail($payment, $subscription);
 
             return response()->json([
                 'success' => true,
@@ -63,11 +62,11 @@ class PaymentApprovalController extends Controller
                     'payment_id' => $payment->id,
                     'user_id' => $payment->user_id,
                     'subscription_end' => $subscription->end_date,
-                    'email_sent' => true,
+                    'email_sent' => $emailSent,
                 ]
             ]);
         } catch (\Exception $e) {
-            \Log::error('Payment approval failed: ' . $e->getMessage());
+            Log::error('Payment approval failed: ' . $e->getMessage());
             
             return response()->json([
                 'success' => false,
@@ -93,7 +92,7 @@ class PaymentApprovalController extends Controller
             ]);
 
             // Send denial notification email
-            $this->sendDenialEmail($payment, $denialReason);
+            $emailSent = $this->sendDenialEmail($payment, $denialReason);
 
             return response()->json([
                 'success' => true,
@@ -102,11 +101,11 @@ class PaymentApprovalController extends Controller
                     'payment_id' => $payment->id,
                     'user_id' => $payment->user_id,
                     'denial_reason' => $denialReason,
-                    'email_sent' => true,
+                    'email_sent' => $emailSent,
                 ]
             ]);
         } catch (\Exception $e) {
-            \Log::error('Payment denial failed: ' . $e->getMessage());
+            Log::error('Payment denial failed: ' . $e->getMessage());
             
             return response()->json([
                 'success' => false,
@@ -119,42 +118,60 @@ class PaymentApprovalController extends Controller
     /**
      * Send payment approval email
      */
-    private function sendApprovalEmail(Payment $payment)
+    private function sendApprovalEmail(Payment $payment, Subscription $subscription)
     {
         try {
             $user = $payment->user;
-            $subscription = Subscription::where('user_id', $user->id)->first();
+            
+            Log::info('Attempting to send approval email to: ' . $user->email);
+            Log::info('User exists: ' . ($user ? 'Yes' : 'No'));
             
             $mailData = [
                 'user_name' => $user->name,
                 'payment_amount' => number_format($payment->amount, 2),
                 'payment_currency' => $payment->currency ?? 'USD',
                 'payment_method' => $payment->method ?? 'Bank Transfer',
-                'payment_reference' => $payment->reference ?? $payment->id,
+                'payment_reference' => $payment->reference ?? 'PAY-' . str_pad($payment->id, 6, '0', STR_PAD_LEFT),
                 'payment_date' => $payment->created_at->format('F j, Y'),
                 'approval_date' => now()->format('F j, Y'),
                 'subscription_start' => $subscription->start_date->format('F j, Y'),
                 'subscription_end' => $subscription->end_date->format('F j, Y'),
                 'subscription_duration' => '1 Year',
-                'account_activated' => true,
+                'app_url' => config('app.url', 'https://redatlearninghub.com'),
             ];
 
-            // Check if we should use Mailable class or direct email
-            if (class_exists(\App\Mail\PaymentApproved::class)) {
-                Mail::to($user->email)->send(new \App\Mail\PaymentApproved($payment, $mailData));
-            } else {
-                // Fallback to simple email
-                Mail::send('emails.payment-approved', $mailData, function ($message) use ($user) {
-                    $message->to($user->email)
-                            ->subject('Payment Approved - Your Subscription is Now Active');
-                });
+            Log::info('Mail data prepared for approval email');
+            Log::info('View exists check: ' . (view()->exists('emails.payment-approved') ? 'Yes' : 'No'));
+
+            // Check if view exists first
+            if (!view()->exists('emails.payment-approved')) {
+                Log::error('Email template not found: emails.payment-approved');
+                
+                // Create a simple text email as fallback
+                Mail::raw("Hello {$user->name},\n\nYour payment of {$payment->amount} has been approved.\n\nSubscription activated until: {$subscription->end_date->format('F j, Y')}\n\nThank you,\nRedat Learning Hub", 
+                    function ($message) use ($user) {
+                        $message->to($user->email)
+                                ->subject('Payment Approved - Redat Learning Hub');
+                    });
+                
+                Log::info('Fallback text email sent to: ' . $user->email);
+                return true;
             }
 
-            \Log::info('Payment approval email sent to: ' . $user->email);
+            // Use the view template
+            Mail::send('emails.payment-approved', $mailData, function ($message) use ($user) {
+                $message->to($user->email)
+                        ->subject('Payment Approved - Your Subscription is Now Active | Redat Learning Hub');
+                
+                Log::info('Email sent via send method to: ' . $user->email);
+            });
+
+            Log::info('Payment approval email sent to: ' . $user->email);
             return true;
             
         } catch (\Exception $e) {
-            \Log::error('Failed to send approval email: ' . $e->getMessage());
+            Log::error('Failed to send approval email: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
             return false;
         }
     }
@@ -167,99 +184,52 @@ class PaymentApprovalController extends Controller
         try {
             $user = $payment->user;
             
+            Log::info('Attempting to send denial email to: ' . $user->email);
+            
             $mailData = [
                 'user_name' => $user->name,
                 'payment_amount' => number_format($payment->amount, 2),
                 'payment_currency' => $payment->currency ?? 'USD',
                 'payment_method' => $payment->method ?? 'Bank Transfer',
-                'payment_reference' => $payment->reference ?? $payment->id,
+                'payment_reference' => $payment->reference ?? 'PAY-' . str_pad($payment->id, 6, '0', STR_PAD_LEFT),
                 'payment_date' => $payment->created_at->format('F j, Y'),
                 'denial_date' => now()->format('F j, Y'),
                 'denial_reason' => $denialReason,
                 'support_contact' => config('mail.support_email', 'support@redatlearninghub.com'),
                 'retry_instructions' => 'Please review your payment details and submit a new payment request if needed.',
+                'app_url' => config('app.url', 'https://redatlearninghub.com'),
             ];
 
-            // Check if we should use Mailable class or direct email
-            if (class_exists(\App\Mail\PaymentDenied::class)) {
-                Mail::to($user->email)->send(new \App\Mail\PaymentDenied($payment, $denialReason, $mailData));
-            } else {
-                // Fallback to simple email
-                Mail::send('emails.payment-denied', $mailData, function ($message) use ($user) {
-                    $message->to($user->email)
-                            ->subject('Payment Review Update - Action Required');
-                });
+            Log::info('View exists check: ' . (view()->exists('emails.payment-denied') ? 'Yes' : 'No'));
+
+            // Check if view exists first
+            if (!view()->exists('emails.payment-denied')) {
+                Log::error('Email template not found: emails.payment-denied');
+                
+                // Create a simple text email as fallback
+                Mail::raw("Hello {$user->name},\n\nYour payment of {$payment->amount} has been denied.\n\nReason: {$denialReason}\n\nPlease review and submit a new payment if needed.\n\nThank you,\nRedat Learning Hub", 
+                    function ($message) use ($user) {
+                        $message->to($user->email)
+                                ->subject('Payment Denied - Redat Learning Hub');
+                    });
+                
+                Log::info('Fallback text email sent to: ' . $user->email);
+                return true;
             }
 
-            \Log::info('Payment denial email sent to: ' . $user->email);
+            // Use the view template
+            Mail::send('emails.payment-denied', $mailData, function ($message) use ($user) {
+                $message->to($user->email)
+                        ->subject('Payment Requires Attention - Action Required | Redat Learning Hub');
+            });
+
+            Log::info('Payment denial email sent to: ' . $user->email);
             return true;
             
         } catch (\Exception $e) {
-            \Log::error('Failed to send denial email: ' . $e->getMessage());
+            Log::error('Failed to send denial email: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
             return false;
         }
-    }
-
-    /**
-     * Get payment statistics for dashboard
-     */
-    public function getPaymentStats()
-    {
-        $stats = [
-            'total_pending' => Payment::where('status', 'pending')->count(),
-            'total_approved' => Payment::where('status', 'approved')->count(),
-            'total_denied' => Payment::where('status', 'denied')->count(),
-            'pending_amount' => Payment::where('status', 'pending')->sum('amount'),
-            'approved_amount' => Payment::where('status', 'approved')->sum('amount'),
-            'total_users' => User::count(),
-            'active_subscriptions' => Subscription::where('status', 'active')->count(),
-            'expiring_soon' => Subscription::where('end_date', '<=', now()->addDays(30))->count(),
-        ];
-
-        return response()->json([
-            'success' => true,
-            'stats' => $stats
-        ]);
-    }
-
-    /**
-     * Get all payments with filters
-     */
-    public function getAllPayments(Request $request)
-    {
-        $query = Payment::with(['user:id,name,email', 'approver:id,name', 'denier:id,name']);
-        
-        // Apply filters
-        if ($request->has('status') && $request->status !== 'all') {
-            $query->where('status', $request->status);
-        }
-        
-        if ($request->has('user_id')) {
-            $query->where('user_id', $request->user_id);
-        }
-        
-        if ($request->has('date_from')) {
-            $query->whereDate('created_at', '>=', $request->date_from);
-        }
-        
-        if ($request->has('date_to')) {
-            $query->whereDate('created_at', '<=', $request->date_to);
-        }
-        
-        // Sort
-        $sortField = $request->get('sort_by', 'created_at');
-        $sortOrder = $request->get('sort_order', 'desc');
-        $query->orderBy($sortField, $sortOrder);
-        
-        // Paginate
-        $perPage = $request->get('per_page', 15);
-        $payments = $query->paginate($perPage);
-
-        return response()->json([
-            'success' => true,
-            'payments' => $payments,
-            'filters' => $request->all(),
-            'total' => $payments->total(),
-        ]);
     }
 }
