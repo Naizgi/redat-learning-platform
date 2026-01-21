@@ -22,7 +22,7 @@
     <span style="display: none; font-size: 0; line-height: 0; max-height: 0; max-width: 0; opacity: 0; overflow: hidden; visibility: hidden; mso-hide: all;">
         Transactional payment approval notification from Redat Learning Hub. 
         This email confirms that your payment of {{ $payment_amount }} has been approved. 
-        Your subscription is now active. 
+        Your subscription is now active and you have full access to all learning materials. 
         This email is not promotional content. 
         Email type: Transactional Payment Notification. Category: Account Update. 
         User action: Payment processing. 
@@ -30,7 +30,7 @@
     </span>
     
     <style>
-        /* Reset for email clients - SAME AS OTP */
+        /* Reset for email clients */
         * {
             margin: 0;
             padding: 0;
@@ -107,8 +107,8 @@
                 padding: 20px !important;
             }
             
-            .payment-container {
-                padding: 20px !important;
+            .payment-details, .subscription-details {
+                padding: 15px !important;
             }
             
             .button {
@@ -118,7 +118,7 @@
             }
         }
         
-        /* Original styles (keep same as OTP) */
+        /* Original styles */
         .email-container {
             max-width: 600px;
             margin: 0 auto;
@@ -152,40 +152,78 @@
             padding: 40px;
         }
         
-        .payment-container {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 30px;
-            margin: 30px 0;
+        .success-icon {
             text-align: center;
-            border: 2px dashed #e0e0e0;
+            font-size: 60px;
+            margin: 20px 0;
         }
         
-        .payment-amount {
-            font-size: 36px;
-            font-weight: bold;
-            letter-spacing: 1px;
-            color: #2d3436;
+        .success-message {
+            background: #e8f5e9;
+            border-radius: 10px;
+            padding: 20px;
             margin: 20px 0;
-            font-family: 'Courier New', monospace;
-            display: inline-block;
-            padding: 10px 20px;
-            background: white;
-            border-radius: 8px;
+            text-align: center;
+            border-left: 4px solid #4CAF50;
+        }
+        
+        .payment-details, .subscription-details {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 25px;
+            margin: 25px 0;
             border: 2px solid #e0e0e0;
         }
         
-        .details-box {
-            background-color: #e8f5e9;
-            border-left: 4px solid #4CAF50;
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 12px 0;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        
+        .detail-label {
+            color: #666;
+            font-weight: 500;
+        }
+        
+        .detail-value {
+            font-weight: 600;
+            color: #2d3436;
+            text-align: right;
+        }
+        
+        .amount-highlight {
+            font-size: 24px;
+            color: #2E7D32;
+            font-weight: 700;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            background-color: #4CAF50;
+            color: white;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .instructions {
+            background-color: #e3f2fd;
+            border-left: 4px solid #2196F3;
             padding: 20px;
             margin: 25px 0;
             border-radius: 5px;
-            text-align: left;
         }
         
-        .details-box h3 {
-            color: #2E7D32;
+        .instructions h3 {
+            color: #1565c0;
             margin-top: 0;
         }
         
@@ -211,17 +249,6 @@
             cursor: pointer;
         }
         
-        .status-notice {
-            color: #2E7D32;
-            font-weight: 600;
-            background-color: #e8f5e9;
-            padding: 10px;
-            border-radius: 5px;
-            text-align: center;
-            margin: 20px 0;
-        }
-        
-        /* Additional transactional styling */
         .transactional-notice {
             font-size: 12px;
             color: #666;
@@ -229,22 +256,6 @@
             margin-top: 20px;
             padding-top: 20px;
             border-top: 1px solid #eee;
-        }
-        
-        .detail-item {
-            margin: 8px 0;
-            display: flex;
-            justify-content: space-between;
-        }
-        
-        .detail-label {
-            color: #666;
-            font-weight: 500;
-        }
-        
-        .detail-value {
-            font-weight: 600;
-            color: #2d3436;
         }
     </style>
 </head>
@@ -255,7 +266,7 @@
             <td style="padding: 20px;">
     <![endif]-->
     
-    <div class="email-container" role="article" aria-label="Redat Learning Hub Payment Approval">
+    <div class="email-container" role="article" aria-label="Redat Learning Hub Payment Approval Notification">
         <!-- Header -->
         <div class="header" role="banner">
             <h1>✅ Payment Approved</h1>
@@ -264,58 +275,93 @@
 
         <!-- Content -->
         <div class="content" role="main">
+            <div class="success-icon" role="img" aria-label="Success">
+                🎉
+            </div>
+            
             <h2>Hello, {{ $user_name }}!</h2>
-            <p>Your payment has been <strong>approved</strong> and your subscription is now active.</p>
+            <p>We're excited to inform you that your payment has been <strong>approved</strong> and your subscription is now active!</p>
 
-            <!-- Payment Amount Display -->
-            <div class="payment-container" role="region" aria-label="Payment Details">
-                <p style="margin-top: 0; color: #666;">Payment Amount:</p>
-                <div class="payment-amount" role="text" aria-label="Payment Amount {{ $payment_currency }} {{ $payment_amount }}">
-                    {{ $payment_currency }} {{ $payment_amount }}
-                </div>
-                <p style="margin-bottom: 0; color: #666;">Reference: {{ $payment_reference }}</p>
+            <!-- Success Message -->
+            <div class="success-message" role="alert">
+                <h3>Payment Approved Successfully!</h3>
+                <p>You now have full access to all premium learning materials and features.</p>
             </div>
 
-            <!-- Status Notice -->
-            <div class="status-notice" role="alert">
-                ✅ Payment approved successfully. Subscription activated.
-            </div>
-
-            <!-- Details Box -->
-            <div class="details-box" role="region" aria-label="Subscription Details">
-                <h3>📅 Subscription Details</h3>
-                <div class="detail-item">
-                    <span class="detail-label">Subscription Start:</span>
-                    <span class="detail-value">{{ $subscription_start }}</span>
+            <!-- Payment Details -->
+            <div class="payment-details" role="region" aria-label="Payment Details">
+                <h3 style="margin-top: 0; color: #2d3436;">📊 Payment Information</h3>
+                <div class="detail-row">
+                    <span class="detail-label">Payment Amount:</span>
+                    <span class="detail-value amount-highlight">{{ $payment_currency }} {{ $payment_amount }}</span>
                 </div>
-                <div class="detail-item">
-                    <span class="detail-label">Subscription End:</span>
-                    <span class="detail-value">{{ $subscription_end }}</span>
-                </div>
-                <div class="detail-item">
-                    <span class="detail-label">Duration:</span>
-                    <span class="detail-value">{{ $subscription_duration }}</span>
-                </div>
-                <div class="detail-item">
+                <div class="detail-row">
                     <span class="detail-label">Payment Method:</span>
                     <span class="detail-value">{{ $payment_method }}</span>
                 </div>
-                <div class="detail-item">
+                <div class="detail-row">
+                    <span class="detail-label">Reference Number:</span>
+                    <span class="detail-value" style="font-family: 'Courier New', monospace;">{{ $payment_reference }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Payment Date:</span>
+                    <span class="detail-value">{{ $payment_date }}</span>
+                </div>
+                <div class="detail-row">
                     <span class="detail-label">Approval Date:</span>
                     <span class="detail-value">{{ $approval_date }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Status:</span>
+                    <span class="detail-value">
+                        <span class="status-badge">Approved</span>
+                    </span>
+                </div>
+            </div>
+
+            <!-- Subscription Details -->
+            <div class="subscription-details" role="region" aria-label="Subscription Details">
+                <h3 style="margin-top: 0; color: #2d3436;">📅 Subscription Details</h3>
+                <div class="detail-row">
+                    <span class="detail-label">Subscription Start:</span>
+                    <span class="detail-value">{{ $subscription_start }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Subscription End:</span>
+                    <span class="detail-value">{{ $subscription_end }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Duration:</span>
+                    <span class="detail-value">{{ $subscription_duration }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Account Status:</span>
+                    <span class="detail-value">
+                        <span class="status-badge">Active</span>
+                    </span>
                 </div>
             </div>
 
             <!-- Instructions -->
-            <p>You now have access to all premium learning materials and features.</p>
+            <div class="instructions" role="region" aria-label="Next Steps">
+                <h3>🚀 What's Next?</h3>
+                <p>You can now access all premium features:</p>
+                <ul>
+                    <li>Browse and enroll in courses</li>
+                    <li>Access exclusive learning materials</li>
+                    <li>Download resources and certificates</li>
+                    <li>Track your learning progress</li>
+                    <li>Participate in discussions and forums</li>
+                </ul>
+            </div>
 
             <p style="text-align: center;">
                 <a href="{{ $app_url }}/dashboard" class="button" role="button" aria-label="Go to Your Dashboard">
-                    Go to Dashboard
+                    Go to Your Dashboard
                 </a>
             </p>
             
-            <p>If you have any questions about your subscription, please contact our support team.</p>
+            <p>If you have any questions about your subscription or need assistance, our support team is here to help.</p>
             
             <!-- Transactional Notice -->
             <div class="transactional-notice" role="contentinfo">
