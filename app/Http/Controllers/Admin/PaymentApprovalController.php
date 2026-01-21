@@ -16,8 +16,8 @@ use App\Mail\PaymentDenied;
 
 class PaymentApprovalController extends Controller
 {
-    
-   public function getPendingPayments()
+    // Get all pending payments with user data
+    public function getPendingPayments()
     {
         try {
             $payments = Payment::with('user:id,name,email')
@@ -40,7 +40,7 @@ class PaymentApprovalController extends Controller
         }
     }
 
-    // Approve payment - SIMPLIFIED VERSION
+    // Approve payment
     public function approve($id, Request $request)
     {
         DB::beginTransaction();
@@ -55,13 +55,19 @@ class PaymentApprovalController extends Controller
                 'approved_at' => now(),
             ]);
 
-            // Create or update subscription
+            // Get current date for subscription
+            $startDate = now();
+            $endDate = now()->addYear(); // 1 year subscription
+            
+            // Create or update subscription with exact dates
             $subscription = Subscription::updateOrCreate(
                 ['user_id' => $payment->user_id],
                 [
-                    'start_date' => now(),
-                    'end_date' => now()->addYear(),
+                    'start_date' => $startDate,
+                    'end_date' => $endDate,
                     'status' => 'active',
+                    'created_at' => now(),
+                    'updated_at' => now(),
                 ]
             );
 
@@ -70,7 +76,7 @@ class PaymentApprovalController extends Controller
 
             DB::commit();
 
-            // Send email EXACTLY like registration
+            // Send approval notification email
             $emailSent = $this->sendPaymentEmail('approved', $payment, $subscription);
 
             return response()->json([
@@ -79,6 +85,7 @@ class PaymentApprovalController extends Controller
                 'data' => [
                     'payment_id' => $payment->id,
                     'user_id' => $payment->user_id,
+                    'subscription_start' => $subscription->start_date,
                     'subscription_end' => $subscription->end_date,
                     'email_sent' => $emailSent,
                 ]
@@ -87,6 +94,7 @@ class PaymentApprovalController extends Controller
             DB::rollBack();
             
             Log::error('Payment approval failed: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
             
             return response()->json([
                 'success' => false,
@@ -96,7 +104,7 @@ class PaymentApprovalController extends Controller
         }
     }
 
-    // Deny payment - SIMPLIFIED VERSION
+    // Deny payment
     public function deny($id, Request $request)
     {
         DB::beginTransaction();
@@ -115,7 +123,7 @@ class PaymentApprovalController extends Controller
 
             DB::commit();
 
-            // Send email EXACTLY like registration
+            // Send denial notification email
             $emailSent = $this->sendPaymentEmail('denied', $payment, null, $denialReason);
 
             return response()->json([
@@ -132,6 +140,7 @@ class PaymentApprovalController extends Controller
             DB::rollBack();
             
             Log::error('Payment denial failed: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
             
             return response()->json([
                 'success' => false,
@@ -142,7 +151,7 @@ class PaymentApprovalController extends Controller
     }
 
     /**
-     * Send payment email - EXACTLY like registration email sending
+     * Send payment email
      */
     private function sendPaymentEmail($type, Payment $payment, $subscription = null, $denialReason = null)
     {
@@ -155,11 +164,15 @@ class PaymentApprovalController extends Controller
                 'payment_id' => $payment->id
             ]);
             
+            // Format currency as ETB (Birr)
+            $currency = 'ETB';
+            $paymentAmount = number_format($payment->amount, 2);
+            
             // Prepare mail data
             $mailData = [
                 'user_name' => $user->name,
-                'payment_amount' => number_format($payment->amount, 2),
-                'payment_currency' => $payment->currency ?? 'USD',
+                'payment_amount' => $paymentAmount,
+                'payment_currency' => $currency,
                 'payment_method' => $payment->method ?? 'Bank Transfer',
                 'payment_reference' => $payment->reference ?? 'PAY-' . str_pad($payment->id, 6, '0', STR_PAD_LEFT),
                 'payment_date' => $payment->created_at->format('F j, Y'),
@@ -188,7 +201,7 @@ class PaymentApprovalController extends Controller
             // Set subject
             $mailable->subject($subject);
             
-            // Try to queue email first (EXACTLY like registration)
+            // Try to queue email first
             try {
                 Log::info('Queueing payment ' . $type . ' email');
                 Mail::to($user->email)->queue($mailable);
@@ -201,7 +214,7 @@ class PaymentApprovalController extends Controller
                     'error' => $queueException->getMessage()
                 ]);
                 
-                // Fallback to immediate send (EXACTLY like registration)
+                // Fallback to immediate send
                 try {
                     Log::info('Attempting immediate payment ' . $type . ' email send');
                     Mail::to($user->email)->send($mailable);
@@ -239,24 +252,28 @@ class PaymentApprovalController extends Controller
     }
 
     /**
-     * Simple fallback email (like password reset)
+     * Simple fallback email
      */
     private function sendSimplePaymentEmail($type, Payment $payment, $subscription = null, $denialReason = null)
     {
         try {
             $user = $payment->user;
             
+            // Format currency as ETB
+            $currency = 'ETB';
+            $paymentAmount = number_format($payment->amount, 2);
+            
             if ($type === 'approved') {
                 $subject = 'Payment Approved - Redat Learning Hub';
+                $endDate = $subscription ? Carbon::parse($subscription->end_date)->format('F j, Y') : 'N/A';
                 $message = "Hello {$user->name},\n\n" .
-                          "Your payment of {$payment->amount} {$payment->currency} has been approved.\n\n" .
-                          "Your subscription is now active until: " . 
-                          Carbon::parse($subscription->end_date)->format('F j, Y') . "\n\n" .
+                          "Your payment of {$currency} {$paymentAmount} has been approved.\n\n" .
+                          "Your subscription is now active until: {$endDate}\n\n" .
                           "Thank you for choosing Redat Learning Hub!";
             } else {
-                $subject = 'Payment Denied - Redat Learning Hub';
+                $subject = 'Payment Requires Attention - Redat Learning Hub';
                 $message = "Hello {$user->name},\n\n" .
-                          "Your payment of {$payment->amount} {$payment->currency} has been denied.\n\n" .
+                          "Your payment of {$currency} {$paymentAmount} has been denied.\n\n" .
                           "Reason: {$denialReason}\n\n" .
                           "Please submit a new payment request if needed.\n\n" .
                           "Thank you,\nRedat Learning Hub";
@@ -273,6 +290,58 @@ class PaymentApprovalController extends Controller
         } catch (\Exception $e) {
             Log::error('Simple payment ' . $type . ' email also failed: ' . $e->getMessage());
             return false;
+        }
+    }
+
+    /**
+     * Test email functionality
+     */
+    public function testEmail(Request $request)
+    {
+        try {
+            $testEmail = $request->input('email', 'test@example.com');
+            
+            Log::info('Testing payment email system');
+            
+            // Test with ETB currency
+            $mailData = [
+                'user_name' => 'Test User',
+                'payment_amount' => '1,000.00',
+                'payment_currency' => 'ETB',
+                'payment_method' => 'Bank Transfer',
+                'payment_reference' => 'TEST-123456',
+                'payment_date' => now()->format('F j, Y'),
+                'approval_date' => now()->format('F j, Y'),
+                'subscription_start' => now()->format('F j, Y'),
+                'subscription_end' => now()->addYear()->format('F j, Y'),
+                'subscription_duration' => '1 Year',
+                'app_url' => config('app.url', 'https://redatlearninghub.com'),
+                'support_contact' => config('mail.support_email', 'support@redatlearninghub.com'),
+            ];
+            
+            Mail::to($testEmail)->send(new PaymentApproved($mailData));
+            
+            if (count(Mail::failures()) > 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment email test failed',
+                    'failures' => Mail::failures()
+                ], 500);
+            }
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Payment email test completed successfully with ETB currency'
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Payment email test failed: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Payment email test failed',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 }
