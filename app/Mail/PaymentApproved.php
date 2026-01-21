@@ -12,24 +12,14 @@ class PaymentApproved extends Mailable
 
     public $mailData;
 
-    public function __construct(array $mailData)
+    public function __construct($mailData)
     {
         $this->mailData = $mailData;
     }
 
     public function build()
     {
-        return $this->subject('Payment Approved - Your Subscription is Now Active | Redat Learning Hub')
-                    ->view('emails.payment-approved')
-                    ->with($this->mailData)
-                    ->withSwiftMessage(function ($message) {
-                        // Add important headers for deliverability
-                        $headers = $message->getHeaders();
-                        $headers->addTextHeader('Precedence', 'bulk');
-                        $headers->addTextHeader('Auto-Submitted', 'auto-generated');
-                        $headers->addTextHeader('X-Auto-Response-Suppress', 'OOF, AutoReply');
-                        $headers->addTextHeader('List-Unsubscribe', '<mailto:support@redatlearninghub.com>');
-                        $headers->addTextHeader('List-Unsubscribe-Post', 'List-Unsubscribe=One-Click');
-                    });
+        return $this->view('emails.payment-approved')
+                    ->with($this->mailData);
     }
 }
