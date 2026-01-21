@@ -9,7 +9,10 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use App\Mail\PaymentApproved;
+use App\Mail\PaymentDenied;
 
 class PaymentApprovalController extends Controller
 {
@@ -40,6 +43,8 @@ class PaymentApprovalController extends Controller
     // Approve payment
     public function approve($id, Request $request)
     {
+        DB::beginTransaction();
+        
         try {
             $payment = Payment::with('user')->findOrFail($id);
 
@@ -63,7 +68,9 @@ class PaymentApprovalController extends Controller
             // Update user status
             $payment->user->update(['is_active' => true]);
 
-            // Send approval notification email
+            DB::commit();
+
+            // Send approval notification email - USING THE SAME PATTERN AS REGISTRATION
             $emailSent = $this->sendApprovalEmail($payment, $subscription);
 
             return response()->json([
@@ -77,6 +84,8 @@ class PaymentApprovalController extends Controller
                 ]
             ]);
         } catch (\Exception $e) {
+            DB::rollBack();
+            
             Log::error('Payment approval failed: ' . $e->getMessage());
             Log::error('Stack trace: ' . $e->getTraceAsString());
             
@@ -91,6 +100,8 @@ class PaymentApprovalController extends Controller
     // Deny payment
     public function deny($id, Request $request)
     {
+        DB::beginTransaction();
+        
         try {
             $payment = Payment::with('user')->findOrFail($id);
 
@@ -103,7 +114,9 @@ class PaymentApprovalController extends Controller
                 'denial_reason' => $denialReason,
             ]);
 
-            // Send denial notification email
+            DB::commit();
+
+            // Send denial notification email - USING THE SAME PATTERN AS REGISTRATION
             $emailSent = $this->sendDenialEmail($payment, $denialReason);
 
             return response()->json([
@@ -117,6 +130,8 @@ class PaymentApprovalController extends Controller
                 ]
             ]);
         } catch (\Exception $e) {
+            DB::rollBack();
+            
             Log::error('Payment denial failed: ' . $e->getMessage());
             Log::error('Stack trace: ' . $e->getTraceAsString());
             
@@ -129,28 +144,20 @@ class PaymentApprovalController extends Controller
     }
 
     /**
-     * Send payment approval email
+     * Send payment approval email - USING REGISTRATION PATTERN
      */
     private function sendApprovalEmail(Payment $payment, Subscription $subscription)
     {
         try {
             $user = $payment->user;
             
-            Log::info('Attempting to send approval email to: ' . $user->email);
+            Log::info('Attempting to send payment approval email', [
+                'to' => $user->email,
+                'user_id' => $user->id,
+                'payment_id' => $payment->id
+            ]);
             
-            // Check if the email template exists
-            $templateExists = view()->exists('emails.payment-approved');
-            Log::info('Template emails.payment-approved exists: ' . ($templateExists ? 'YES' : 'NO'));
-            
-            // Ensure dates are Carbon instances
-            $subscriptionStart = $subscription->start_date instanceof \Carbon\Carbon 
-                ? $subscription->start_date 
-                : Carbon::parse($subscription->start_date);
-                
-            $subscriptionEnd = $subscription->end_date instanceof \Carbon\Carbon 
-                ? $subscription->end_date 
-                : Carbon::parse($subscription->end_date);
-            
+            // Prepare mail data (similar to how SendOtpMail works)
             $mailData = [
                 'user_name' => $user->name,
                 'payment_amount' => number_format($payment->amount, 2),
@@ -159,53 +166,114 @@ class PaymentApprovalController extends Controller
                 'payment_reference' => $payment->reference ?? 'PAY-' . str_pad($payment->id, 6, '0', STR_PAD_LEFT),
                 'payment_date' => $payment->created_at->format('F j, Y'),
                 'approval_date' => now()->format('F j, Y'),
-                'subscription_start' => $subscriptionStart->format('F j, Y'),
-                'subscription_end' => $subscriptionEnd->format('F j, Y'),
+                'subscription_start' => Carbon::parse($subscription->start_date)->format('F j, Y'),
+                'subscription_end' => Carbon::parse($subscription->end_date)->format('F j, Y'),
                 'subscription_duration' => '1 Year',
                 'app_url' => config('app.url', 'https://redatlearninghub.com'),
             ];
-
-            Log::info('Mail data prepared: ' . json_encode($mailData));
-
-            // Send email using the template
-            Mail::send('emails.payment-approved', $mailData, function ($message) use ($user) {
-                $message->to($user->email)
-                        ->subject('Payment Approved - Your Subscription is Now Active | Redat Learning Hub');
+            
+            Log::info('Payment approval mail data prepared', [
+                'user_email' => $user->email,
+                'data_keys' => array_keys($mailData)
+            ]);
+            
+            // Check if Mailable class exists
+            if (class_exists(\App\Mail\PaymentApproved::class)) {
+                Log::info('Using PaymentApproved Mailable class');
                 
-                Log::info('Mail function called for: ' . $user->email);
-            });
-
-            // Check if mail was actually sent
-            if (count(Mail::failures()) > 0) {
-                Log::error('Failed to send approval email to: ' . $user->email);
-                Log::error('Mail failures: ' . json_encode(Mail::failures()));
-                return false;
+                // Try to queue email first (like registration)
+                try {
+                    Mail::to($user->email)
+                        ->queue(new \App\Mail\PaymentApproved($mailData));
+                    
+                    Log::info('Payment approval email queued successfully');
+                    return true;
+                    
+                } catch (\Exception $queueException) {
+                    Log::warning('Payment approval email queue failed, trying immediate send', [
+                        'error' => $queueException->getMessage()
+                    ]);
+                    
+                    // Fallback to immediate send
+                    try {
+                        Mail::to($user->email)
+                            ->send(new \App\Mail\PaymentApproved($mailData));
+                        
+                        Log::info('Payment approval email sent immediately');
+                        return true;
+                        
+                    } catch (\Exception $sendException) {
+                        Log::error('Both queue and immediate send failed for payment approval', [
+                            'queue_error' => $queueException->getMessage(),
+                            'send_error' => $sendException->getMessage()
+                        ]);
+                        
+                        // Fallback to simple email
+                        return $this->sendSimpleApprovalEmail($payment, $subscription);
+                    }
+                }
+            } else {
+                Log::warning('PaymentApproved Mailable class not found, using template');
+                
+                // Use template directly
+                try {
+                    Mail::send('emails.payment-approved', $mailData, function ($message) use ($user) {
+                        $message->to($user->email)
+                                ->subject('Payment Approved - Your Subscription is Now Active | Redat Learning Hub');
+                    });
+                    
+                    if (count(Mail::failures()) > 0) {
+                        Log::error('Payment approval email template send failed', [
+                            'failures' => Mail::failures()
+                        ]);
+                        return $this->sendSimpleApprovalEmail($payment, $subscription);
+                    }
+                    
+                    Log::info('Payment approval email sent via template');
+                    return true;
+                    
+                } catch (\Exception $templateException) {
+                    Log::error('Payment approval template email failed', [
+                        'error' => $templateException->getMessage()
+                    ]);
+                    
+                    return $this->sendSimpleApprovalEmail($payment, $subscription);
+                }
             }
-
-            Log::info('Payment approval email successfully sent to: ' . $user->email);
-            return true;
             
         } catch (\Exception $e) {
-            Log::error('Failed to send approval email: ' . $e->getMessage());
-            Log::error('Stack trace: ' . $e->getTraceAsString());
-            return false;
+            Log::error('Complete payment approval email process failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            // Final fallback
+            try {
+                return $this->sendSimpleApprovalEmail($payment, $subscription);
+            } catch (\Exception $simpleException) {
+                Log::error('Even simple approval email failed', [
+                    'error' => $simpleException->getMessage()
+                ]);
+                return false;
+            }
         }
     }
 
     /**
-     * Send payment denial email
+     * Send payment denial email - USING REGISTRATION PATTERN
      */
     private function sendDenialEmail(Payment $payment, $denialReason)
     {
         try {
             $user = $payment->user;
             
-            Log::info('Attempting to send denial email to: ' . $user->email);
+            Log::info('Attempting to send payment denial email', [
+                'to' => $user->email,
+                'user_id' => $user->id,
+                'payment_id' => $payment->id
+            ]);
             
-            // Check if the email template exists
-            $templateExists = view()->exists('emails.payment-denied');
-            Log::info('Template emails.payment-denied exists: ' . ($templateExists ? 'YES' : 'NO'));
-            
+            // Prepare mail data
             $mailData = [
                 'user_name' => $user->name,
                 'payment_amount' => number_format($payment->amount, 2),
@@ -219,34 +287,94 @@ class PaymentApprovalController extends Controller
                 'retry_instructions' => 'Please review your payment details and submit a new payment request if needed.',
                 'app_url' => config('app.url', 'https://redatlearninghub.com'),
             ];
-
-            Log::info('Mail data prepared: ' . json_encode($mailData));
-
-            // Send email using the template
-            Mail::send('emails.payment-denied', $mailData, function ($message) use ($user) {
-                $message->to($user->email)
-                        ->subject('Payment Requires Attention - Action Required | Redat Learning Hub');
-            });
-
-            // Check if mail was actually sent
-            if (count(Mail::failures()) > 0) {
-                Log::error('Failed to send denial email to: ' . $user->email);
-                Log::error('Mail failures: ' . json_encode(Mail::failures()));
-                return false;
+            
+            Log::info('Payment denial mail data prepared', [
+                'user_email' => $user->email
+            ]);
+            
+            // Check if Mailable class exists
+            if (class_exists(\App\Mail\PaymentDenied::class)) {
+                Log::info('Using PaymentDenied Mailable class');
+                
+                // Try to queue email first
+                try {
+                    Mail::to($user->email)
+                        ->queue(new \App\Mail\PaymentDenied($mailData, $denialReason));
+                    
+                    Log::info('Payment denial email queued successfully');
+                    return true;
+                    
+                } catch (\Exception $queueException) {
+                    Log::warning('Payment denial email queue failed, trying immediate send', [
+                        'error' => $queueException->getMessage()
+                    ]);
+                    
+                    // Fallback to immediate send
+                    try {
+                        Mail::to($user->email)
+                            ->send(new \App\Mail\PaymentDenied($mailData, $denialReason));
+                        
+                        Log::info('Payment denial email sent immediately');
+                        return true;
+                        
+                    } catch (\Exception $sendException) {
+                        Log::error('Both queue and immediate send failed for payment denial', [
+                            'queue_error' => $queueException->getMessage(),
+                            'send_error' => $sendException->getMessage()
+                        ]);
+                        
+                        return $this->sendSimpleDenialEmail($payment, $denialReason);
+                    }
+                }
+            } else {
+                Log::warning('PaymentDenied Mailable class not found, using template');
+                
+                // Use template directly
+                try {
+                    Mail::send('emails.payment-denied', $mailData, function ($message) use ($user) {
+                        $message->to($user->email)
+                                ->subject('Payment Requires Attention - Action Required | Redat Learning Hub');
+                    });
+                    
+                    if (count(Mail::failures()) > 0) {
+                        Log::error('Payment denial email template send failed', [
+                            'failures' => Mail::failures()
+                        ]);
+                        return $this->sendSimpleDenialEmail($payment, $denialReason);
+                    }
+                    
+                    Log::info('Payment denial email sent via template');
+                    return true;
+                    
+                } catch (\Exception $templateException) {
+                    Log::error('Payment denial template email failed', [
+                        'error' => $templateException->getMessage()
+                    ]);
+                    
+                    return $this->sendSimpleDenialEmail($payment, $denialReason);
+                }
             }
-
-            Log::info('Payment denial email successfully sent to: ' . $user->email);
-            return true;
             
         } catch (\Exception $e) {
-            Log::error('Failed to send denial email: ' . $e->getMessage());
-            Log::error('Stack trace: ' . $e->getTraceAsString());
-            return false;
+            Log::error('Complete payment denial email process failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            // Final fallback
+            try {
+                return $this->sendSimpleDenialEmail($payment, $denialReason);
+            } catch (\Exception $simpleException) {
+                Log::error('Even simple denial email failed', [
+                    'error' => $simpleException->getMessage()
+                ]);
+                return false;
+            }
         }
     }
 
     /**
-     * Simplified version that will definitely work
+     * Simple fallback approval email (like password reset)
      */
     private function sendSimpleApprovalEmail(Payment $payment, Subscription $subscription)
     {
@@ -256,9 +384,7 @@ class PaymentApprovalController extends Controller
             $message = "Hello {$user->name},\n\n" .
                       "Your payment of {$payment->amount} {$payment->currency} has been approved!\n\n" .
                       "Your subscription is now active until: " . 
-                      ($subscription->end_date instanceof \Carbon\Carbon 
-                        ? $subscription->end_date->format('F j, Y') 
-                        : date('F j, Y', strtotime($subscription->end_date))) . "\n\n" .
+                      Carbon::parse($subscription->end_date)->format('F j, Y') . "\n\n" .
                       "Thank you for choosing Redat Learning Hub!";
             
             Mail::raw($message, function ($message) use ($user) {
@@ -270,13 +396,13 @@ class PaymentApprovalController extends Controller
             return true;
             
         } catch (\Exception $e) {
-            Log::error('Failed to send simple approval email: ' . $e->getMessage());
+            Log::error('Simple approval email also failed: ' . $e->getMessage());
             return false;
         }
     }
 
     /**
-     * Simplified version that will definitely work
+     * Simple fallback denial email (like password reset)
      */
     private function sendSimpleDenialEmail(Payment $payment, $denialReason)
     {
@@ -298,8 +424,50 @@ class PaymentApprovalController extends Controller
             return true;
             
         } catch (\Exception $e) {
-            Log::error('Failed to send simple denial email: ' . $e->getMessage());
+            Log::error('Simple denial email also failed: ' . $e->getMessage());
             return false;
+        }
+    }
+
+    /**
+     * Test email endpoint
+     */
+    public function testEmail(Request $request)
+    {
+        try {
+            $testEmail = $request->input('email', 'your-email@gmail.com');
+            
+            Log::info('Testing email system for payment notifications');
+            
+            // Test basic email (like password reset)
+            Mail::raw('Test payment notification email from Redat Learning Hub', function ($message) use ($testEmail) {
+                $message->to($testEmail)
+                        ->subject('Test Payment Email - Redat Learning Hub');
+            });
+            
+            if (count(Mail::failures()) > 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Basic email test failed',
+                    'failures' => Mail::failures()
+                ], 500);
+            }
+            
+            Log::info('Basic email test passed');
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Email test completed successfully'
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Payment email test failed: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Email test failed',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 }

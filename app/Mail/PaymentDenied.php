@@ -1,30 +1,27 @@
 <?php
-// app/Mail/PaymentDenied.php
+
 namespace App\Mail;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
-use App\Models\Payment;
 
 class PaymentDenied extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public $payment;
-    public $denialReason;
     public $mailData;
+    public $denialReason;
 
-    public function __construct(Payment $payment, string $denialReason, array $mailData = [])
+    public function __construct(array $mailData, $denialReason)
     {
-        $this->payment = $payment;
-        $this->denialReason = $denialReason;
         $this->mailData = $mailData;
+        $this->denialReason = $denialReason;
     }
 
     public function build()
     {
-        return $this->subject('Payment Review Update - Action Required')
+        return $this->subject('Payment Requires Attention - Action Required | Redat Learning Hub')
                     ->view('emails.payment-denied')
                     ->with(array_merge($this->mailData, [
                         'denial_reason' => $this->denialReason
