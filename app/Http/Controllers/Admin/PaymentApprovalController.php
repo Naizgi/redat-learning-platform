@@ -16,7 +16,29 @@ use App\Mail\PaymentDenied;
 
 class PaymentApprovalController extends Controller
 {
-    // ... other methods ...
+    
+   public function getPendingPayments()
+    {
+        try {
+            $payments = Payment::with('user:id,name,email')
+                ->where('status', 'pending')
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'payments' => $payments
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to fetch pending payments: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load payments',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
 
     // Approve payment - SIMPLIFIED VERSION
     public function approve($id, Request $request)
