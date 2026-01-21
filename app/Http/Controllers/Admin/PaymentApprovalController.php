@@ -15,15 +15,25 @@ class PaymentApprovalController extends Controller
     // Get all pending payments with user data
     public function getPendingPayments()
     {
-        $payments = Payment::with('user:id,name,email')
-            ->where('status', 'pending')
-            ->orderBy('created_at', 'desc')
-            ->get();
+        try {
+            $payments = Payment::with('user:id,name,email')
+                ->where('status', 'pending')
+                ->orderBy('created_at', 'desc')
+                ->get();
 
-        return response()->json([
-            'success' => true,
-            'payments' => $payments
-        ]);
+            return response()->json([
+                'success' => true,
+                'payments' => $payments
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to fetch pending payments: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load payments',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
     }
 
     // Approve payment
@@ -67,6 +77,7 @@ class PaymentApprovalController extends Controller
             ]);
         } catch (\Exception $e) {
             Log::error('Payment approval failed: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
             
             return response()->json([
                 'success' => false,
@@ -106,6 +117,7 @@ class PaymentApprovalController extends Controller
             ]);
         } catch (\Exception $e) {
             Log::error('Payment denial failed: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
             
             return response()->json([
                 'success' => false,
@@ -124,7 +136,10 @@ class PaymentApprovalController extends Controller
             $user = $payment->user;
             
             Log::info('Attempting to send approval email to: ' . $user->email);
-            Log::info('User exists: ' . ($user ? 'Yes' : 'No'));
+            
+            // Check if the email template exists
+            $templateExists = view()->exists('emails.payment-approved');
+            Log::info('Template emails.payment-approved exists: ' . ($templateExists ? 'YES' : 'NO'));
             
             $mailData = [
                 'user_name' => $user->name,
@@ -140,33 +155,24 @@ class PaymentApprovalController extends Controller
                 'app_url' => config('app.url', 'https://redatlearninghub.com'),
             ];
 
-            Log::info('Mail data prepared for approval email');
-            Log::info('View exists check: ' . (view()->exists('emails.payment-approved') ? 'Yes' : 'No'));
+            Log::info('Mail data prepared: ' . json_encode($mailData));
 
-            // Check if view exists first
-            if (!view()->exists('emails.payment-approved')) {
-                Log::error('Email template not found: emails.payment-approved');
-                
-                // Create a simple text email as fallback
-                Mail::raw("Hello {$user->name},\n\nYour payment of {$payment->amount} has been approved.\n\nSubscription activated until: {$subscription->end_date->format('F j, Y')}\n\nThank you,\nRedat Learning Hub", 
-                    function ($message) use ($user) {
-                        $message->to($user->email)
-                                ->subject('Payment Approved - Redat Learning Hub');
-                    });
-                
-                Log::info('Fallback text email sent to: ' . $user->email);
-                return true;
-            }
-
-            // Use the view template
+            // Send email using the template
             Mail::send('emails.payment-approved', $mailData, function ($message) use ($user) {
                 $message->to($user->email)
                         ->subject('Payment Approved - Your Subscription is Now Active | Redat Learning Hub');
                 
-                Log::info('Email sent via send method to: ' . $user->email);
+                Log::info('Mail function called for: ' . $user->email);
             });
 
-            Log::info('Payment approval email sent to: ' . $user->email);
+            // Check if mail was actually sent
+            if (count(Mail::failures()) > 0) {
+                Log::error('Failed to send approval email to: ' . $user->email);
+                Log::error('Mail failures: ' . json_encode(Mail::failures()));
+                return false;
+            }
+
+            Log::info('Payment approval email successfully sent to: ' . $user->email);
             return true;
             
         } catch (\Exception $e) {
@@ -186,6 +192,10 @@ class PaymentApprovalController extends Controller
             
             Log::info('Attempting to send denial email to: ' . $user->email);
             
+            // Check if the email template exists
+            $templateExists = view()->exists('emails.payment-denied');
+            Log::info('Template emails.payment-denied exists: ' . ($templateExists ? 'YES' : 'NO'));
+            
             $mailData = [
                 'user_name' => $user->name,
                 'payment_amount' => number_format($payment->amount, 2),
@@ -200,36 +210,98 @@ class PaymentApprovalController extends Controller
                 'app_url' => config('app.url', 'https://redatlearninghub.com'),
             ];
 
-            Log::info('View exists check: ' . (view()->exists('emails.payment-denied') ? 'Yes' : 'No'));
+            Log::info('Mail data prepared: ' . json_encode($mailData));
 
-            // Check if view exists first
-            if (!view()->exists('emails.payment-denied')) {
-                Log::error('Email template not found: emails.payment-denied');
-                
-                // Create a simple text email as fallback
-                Mail::raw("Hello {$user->name},\n\nYour payment of {$payment->amount} has been denied.\n\nReason: {$denialReason}\n\nPlease review and submit a new payment if needed.\n\nThank you,\nRedat Learning Hub", 
-                    function ($message) use ($user) {
-                        $message->to($user->email)
-                                ->subject('Payment Denied - Redat Learning Hub');
-                    });
-                
-                Log::info('Fallback text email sent to: ' . $user->email);
-                return true;
-            }
-
-            // Use the view template
+            // Send email using the template
             Mail::send('emails.payment-denied', $mailData, function ($message) use ($user) {
                 $message->to($user->email)
                         ->subject('Payment Requires Attention - Action Required | Redat Learning Hub');
             });
 
-            Log::info('Payment denial email sent to: ' . $user->email);
+            // Check if mail was actually sent
+            if (count(Mail::failures()) > 0) {
+                Log::error('Failed to send denial email to: ' . $user->email);
+                Log::error('Mail failures: ' . json_encode(Mail::failures()));
+                return false;
+            }
+
+            Log::info('Payment denial email successfully sent to: ' . $user->email);
             return true;
             
         } catch (\Exception $e) {
             Log::error('Failed to send denial email: ' . $e->getMessage());
             Log::error('Stack trace: ' . $e->getTraceAsString());
             return false;
+        }
+    }
+
+    /**
+     * Test email functionality
+     */
+    public function testEmail(Request $request)
+    {
+        try {
+            $testEmail = $request->input('email', 'test@example.com');
+            
+            Log::info('Testing email to: ' . $testEmail);
+            
+            // Test simple email first
+            Mail::raw('Test email from Redat Learning Hub', function ($message) use ($testEmail) {
+                $message->to($testEmail)
+                        ->subject('Test Email - Redat Learning Hub');
+            });
+            
+            if (count(Mail::failures()) > 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Email test failed',
+                    'failures' => Mail::failures()
+                ], 500);
+            }
+            
+            // Test template email
+            $mailData = [
+                'user_name' => 'Test User',
+                'payment_amount' => '100.00',
+                'payment_currency' => 'USD',
+                'payment_method' => 'Test Method',
+                'payment_reference' => 'TEST-123456',
+                'payment_date' => now()->format('F j, Y'),
+                'approval_date' => now()->format('F j, Y'),
+                'subscription_start' => now()->format('F j, Y'),
+                'subscription_end' => now()->addYear()->format('F j, Y'),
+                'subscription_duration' => '1 Year',
+                'app_url' => config('app.url', 'https://redatlearninghub.com'),
+            ];
+            
+            Mail::send('emails.payment-approved', $mailData, function ($message) use ($testEmail) {
+                $message->to($testEmail)
+                        ->subject('Test Template Email - Payment Approved');
+            });
+            
+            if (count(Mail::failures()) > 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Template email test failed',
+                    'failures' => Mail::failures()
+                ], 500);
+            }
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Email test completed successfully'
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Email test failed: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Email test failed',
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ], 500);
         }
     }
 }
