@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Payment Approved - Redat Learning Hub</title>
     
-    <!-- ===== CRITICAL ANTI-SPAM METADATA ===== -->
+    <!-- ===== ANTI-SPAM & DELIVERABILITY METADATA ===== -->
     <meta name="format-detection" content="telephone=no">
     <meta name="format-detection" content="date=no">
     <meta name="format-detection" content="address=no">
@@ -17,30 +17,20 @@
     <!-- Email type identifier for spam filters -->
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
     <meta name="x-mailer" content="Redat Learning Platform">
-    <meta name="X-Priority" content="3">
-    <meta name="X-MSMail-Priority" content="Normal">
-    <meta name="Importance" content="Normal">
     
-    <!-- Anti-Spam Preheader Text -->
-    <div style="display: none; max-height: 0; overflow: hidden;">
-        Payment status update: Your payment of {{ $payment_amount }} has been approved. Your Redat Learning Hub subscription is now active.
-        &zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
-        {{ date('Y-m-d H:i:s') }}
-    </div>
-    
-    <!-- Hidden anti-spam text for better deliverability -->
-    <div style="display: none; font-size: 1px; color: #fff; line-height: 1px; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden;">
-        This is a transactional email regarding your account status. You are receiving this because you submitted a payment to Redat Learning Hub. 
-        Email type: Transactional Account Notification. Category: Account Update. 
-        User ID: {{ $user_id ?? 'N/A' }} | Transaction ID: {{ $payment_reference }}
-        Not promotional. Not marketing. Not bulk email. Not spam. 
-        This email confirms a user-initiated action. 
-        Content includes payment confirmation and subscription details only.
-        Do not mark as spam. Report as not spam if incorrectly filtered.
-    </div>
+    <!-- Hidden text identifying email type (spam filters read this) -->
+    <span style="display: none; font-size: 0; line-height: 0; max-height: 0; max-width: 0; opacity: 0; overflow: hidden; visibility: hidden; mso-hide: all;">
+        Transactional payment approval notification from Redat Learning Hub. 
+        This email confirms that your payment of {{ $payment_amount }} has been approved. 
+        Your subscription is now active. 
+        This email is not promotional content. 
+        Email type: Transactional Payment Notification. Category: Account Update. 
+        User action: Payment processing. 
+        Not spam. Not promotional. Not bulk. Not marketing.
+    </span>
     
     <style>
-        /* Reset for email clients */
+        /* Reset for email clients - SAME AS OTP */
         * {
             margin: 0;
             padding: 0;
@@ -58,23 +48,18 @@
             -ms-text-size-adjust: 100%;
             width: 100% !important;
             height: 100%;
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
         }
         
-        /* Prevent Gmail from changing link colors - IMPORTANT FOR SPAM SCORES */
+        /* Prevent Gmail from changing link colors */
         a {
-            color: #2563eb !important;
+            color: #667eea !important;
             text-decoration: none;
-            font-weight: 500;
         }
         
         a:hover {
             text-decoration: underline !important;
-            color: #1d4ed8 !important;
         }
         
-        /* Remove blue links in iOS */
         a[x-apple-data-detectors] {
             color: inherit !important;
             text-decoration: none !important;
@@ -82,12 +67,6 @@
             font-family: inherit !important;
             font-weight: inherit !important;
             line-height: inherit !important;
-        }
-        
-        /* Prevent auto-linking of dates and addresses in Outlook */
-        .no-link a {
-            color: inherit !important;
-            text-decoration: none !important;
         }
         
         /* Outlook-specific fixes */
@@ -128,329 +107,240 @@
                 padding: 20px !important;
             }
             
-            .payment-details, .subscription-details {
-                padding: 15px !important;
+            .payment-container {
+                padding: 20px !important;
             }
             
             .button {
                 display: block !important;
                 width: 100% !important;
                 text-align: center !important;
-                margin: 10px 0 !important;
-            }
-            
-            .detail-row {
-                flex-direction: column !important;
-                align-items: flex-start !important;
-            }
-            
-            .detail-value {
-                text-align: left !important;
-                margin-top: 4px !important;
             }
         }
         
-        /* Original styles with spam-friendly modifications */
+        /* Original styles (keep same as OTP) */
         .email-container {
             max-width: 600px;
             margin: 0 auto;
             background-color: #ffffff;
             border-radius: 12px;
             overflow: hidden;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); /* Softer shadow - aggressive shadows trigger spam */
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
             width: 100%;
-            border: 1px solid #e5e7eb; /* Subtle border */
         }
         
         .header {
-            background: linear-gradient(135deg, #059669 0%, #047857 100%); /* More professional green */
+            background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
             color: white;
             padding: 30px;
             text-align: center;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
         
         .header h1 {
             margin: 0;
-            font-size: 24px; /* Smaller heading - less spammy */
+            font-size: 28px;
             font-weight: 600;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
         
         .header p {
-            margin: 8px 0 0;
-            opacity: 0.95;
-            font-size: 15px;
-            font-weight: 400;
-        }
-        
-        .content {
-            padding: 30px; /* Reduced padding */
-        }
-        
-        .success-icon {
-            text-align: center;
-            font-size: 48px; /* Smaller icon */
-            margin: 15px 0;
-            color: #059669;
-        }
-        
-        .success-message {
-            background: #f0fdf4;
-            border-radius: 8px;
-            padding: 16px;
-            margin: 16px 0;
-            text-align: center;
-            border: 1px solid #bbf7d0;
-            border-left: 4px solid #059669;
-        }
-        
-        .payment-details, .subscription-details {
-            background: #f9fafb;
-            border-radius: 8px;
-            padding: 20px;
-            margin: 20px 0;
-            border: 1px solid #e5e7eb;
-        }
-        
-        .detail-row {
-            display: flex;
-            justify-content: space-between;
-            margin: 10px 0;
-            padding-bottom: 10px;
-            border-bottom: 1px solid #f3f4f6;
-        }
-        
-        .detail-row:last-child {
-            border-bottom: none;
-        }
-        
-        .detail-label {
-            color: #4b5563;
-            font-weight: 500;
-            font-size: 14px;
-        }
-        
-        .detail-value {
-            font-weight: 600;
-            color: #111827;
-            text-align: right;
-            font-size: 14px;
-        }
-        
-        .amount-highlight {
-            font-size: 20px; /* Smaller */
-            color: #059669;
-            font-weight: 700;
-        }
-        
-        .status-badge {
-            display: inline-block;
-            padding: 4px 10px;
-            background-color: #059669;
-            color: white;
-            border-radius: 16px;
-            font-size: 13px;
-            font-weight: 600;
-            letter-spacing: 0.3px;
-        }
-        
-        .instructions {
-            background-color: #eff6ff;
-            border-left: 4px solid #3b82f6;
-            padding: 18px;
-            margin: 20px 0;
-            border-radius: 6px;
-        }
-        
-        .instructions h3 {
-            color: #1e40af;
-            margin-top: 0;
+            margin: 10px 0 0;
+            opacity: 0.9;
             font-size: 16px;
         }
         
-        .footer {
-            background-color: #f9fafb;
-            padding: 22px;
+        .content {
+            padding: 40px;
+        }
+        
+        .payment-container {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 30px;
+            margin: 30px 0;
             text-align: center;
-            border-top: 1px solid #e5e7eb;
-            color: #6b7280;
-            font-size: 13px;
+            border: 2px dashed #e0e0e0;
+        }
+        
+        .payment-amount {
+            font-size: 36px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            color: #2d3436;
+            margin: 20px 0;
+            font-family: 'Courier New', monospace;
+            display: inline-block;
+            padding: 10px 20px;
+            background: white;
+            border-radius: 8px;
+            border: 2px solid #e0e0e0;
+        }
+        
+        .details-box {
+            background-color: #e8f5e9;
+            border-left: 4px solid #4CAF50;
+            padding: 20px;
+            margin: 25px 0;
+            border-radius: 5px;
+            text-align: left;
+        }
+        
+        .details-box h3 {
+            color: #2E7D32;
+            margin-top: 0;
+        }
+        
+        .footer {
+            background-color: #f1f3f4;
+            padding: 25px;
+            text-align: center;
+            border-top: 1px solid #e0e0e0;
+            color: #666;
+            font-size: 14px;
         }
         
         .button {
             display: inline-block;
-            padding: 12px 24px;
-            background: linear-gradient(135deg, #059669 0%, #047857 100%);
+            padding: 14px 28px;
+            background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
             color: white;
             text-decoration: none;
-            border-radius: 6px;
+            border-radius: 8px;
             font-weight: 600;
-            margin: 16px 0;
+            margin: 20px 0;
             border: none;
             cursor: pointer;
-            font-size: 14px;
+        }
+        
+        .status-notice {
+            color: #2E7D32;
+            font-weight: 600;
+            background-color: #e8f5e9;
+            padding: 10px;
+            border-radius: 5px;
             text-align: center;
-            transition: background-color 0.2s;
+            margin: 20px 0;
         }
         
-        .button:hover {
-            background: linear-gradient(135deg, #047857 0%, #065f46 100%);
-        }
-        
+        /* Additional transactional styling */
         .transactional-notice {
-            font-size: 11px;
-            color: #6b7280;
+            font-size: 12px;
+            color: #666;
             text-align: center;
             margin-top: 20px;
-            padding-top: 16px;
-            border-top: 1px solid #e5e7eb;
-            line-height: 1.5;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
         }
         
-        /* Text balance for spam filters */
-        .text-balance {
-            text-wrap: balance;
-            line-height: 1.5;
+        .detail-item {
+            margin: 8px 0;
+            display: flex;
+            justify-content: space-between;
         }
         
-        /* Avoid spam trigger words */
-        .no-spam-trigger {
-            font-weight: normal !important;
-            text-transform: none !important;
+        .detail-label {
+            color: #666;
+            font-weight: 500;
+        }
+        
+        .detail-value {
+            font-weight: 600;
+            color: #2d3436;
         }
     </style>
 </head>
-<body style="margin: 0; padding: 20px; background-color: #f7f9fc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-    <!-- Outlook wrapper -->
+<body style="margin: 0; padding: 0; background-color: #f7f9fc;">
     <!--[if mso]>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f7f9fc;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
         <tr>
-            <td align="center" style="padding: 20px;">
+            <td style="padding: 20px;">
     <![endif]-->
     
-    <div class="email-container" role="article" aria-label="Redat Learning Hub Payment Approval Notification">
+    <div class="email-container" role="article" aria-label="Redat Learning Hub Payment Approval">
         <!-- Header -->
         <div class="header" role="banner">
-            <h1 class="no-spam-trigger">Payment Approved</h1>
+            <h1>✅ Payment Approved</h1>
             <p>Redat Learning Hub Subscription Activated</p>
         </div>
 
         <!-- Content -->
         <div class="content" role="main">
-            <div class="success-icon" role="img" aria-label="Success">
-                ✓
-            </div>
-            
-            <h2 style="color: #111827; margin-bottom: 16px; font-size: 20px;">Hello, {{ $user_name }}!</h2>
-            <p class="text-balance" style="margin-bottom: 20px;">We're confirming that your payment has been <strong>approved</strong> and your subscription is now active.</p>
+            <h2>Hello, {{ $user_name }}!</h2>
+            <p>Your payment has been <strong>approved</strong> and your subscription is now active.</p>
 
-            <!-- Success Message -->
-            <div class="success-message" role="alert">
-                <h3 style="margin: 0 0 8px 0; font-size: 17px;">Payment Approved Successfully</h3>
-                <p style="margin: 0;">You now have access to all premium learning materials and features.</p>
-            </div>
-
-            <!-- Payment Details -->
-            <div class="payment-details" role="region" aria-label="Payment Details">
-                <h3 style="margin-top: 0; margin-bottom: 16px; color: #111827; font-size: 17px;">Payment Information</h3>
-                <div class="detail-row">
-                    <span class="detail-label">Payment Amount:</span>
-                    <span class="detail-value amount-highlight">{{ $payment_currency }} {{ $payment_amount }}</span>
+            <!-- Payment Amount Display -->
+            <div class="payment-container" role="region" aria-label="Payment Details">
+                <p style="margin-top: 0; color: #666;">Payment Amount:</p>
+                <div class="payment-amount" role="text" aria-label="Payment Amount {{ $payment_currency }} {{ $payment_amount }}">
+                    {{ $payment_currency }} {{ $payment_amount }}
                 </div>
-                <div class="detail-row">
-                    <span class="detail-label">Payment Method:</span>
-                    <span class="detail-value">{{ $payment_method }}</span>
-                </div>
-                <div class="detail-row">
-                    <span class="detail-label">Reference Number:</span>
-                    <span class="detail-value" style="font-family: 'Courier New', monospace; font-size: 13px;">{{ $payment_reference }}</span>
-                </div>
-                <div class="detail-row">
-                    <span class="detail-label">Payment Date:</span>
-                    <span class="detail-value no-link">{{ $payment_date }}</span>
-                </div>
-                <div class="detail-row">
-                    <span class="detail-label">Approval Date:</span>
-                    <span class="detail-value no-link">{{ $approval_date }}</span>
-                </div>
-                <div class="detail-row">
-                    <span class="detail-label">Status:</span>
-                    <span class="detail-value">
-                        <span class="status-badge">Approved</span>
-                    </span>
-                </div>
+                <p style="margin-bottom: 0; color: #666;">Reference: {{ $payment_reference }}</p>
             </div>
 
-            <!-- Subscription Details -->
-            <div class="subscription-details" role="region" aria-label="Subscription Details">
-                <h3 style="margin-top: 0; margin-bottom: 16px; color: #111827; font-size: 17px;">Subscription Details</h3>
-                <div class="detail-row">
+            <!-- Status Notice -->
+            <div class="status-notice" role="alert">
+                ✅ Payment approved successfully. Subscription activated.
+            </div>
+
+            <!-- Details Box -->
+            <div class="details-box" role="region" aria-label="Subscription Details">
+                <h3>📅 Subscription Details</h3>
+                <div class="detail-item">
                     <span class="detail-label">Subscription Start:</span>
-                    <span class="detail-value no-link">{{ $subscription_start }}</span>
+                    <span class="detail-value">{{ $subscription_start }}</span>
                 </div>
-                <div class="detail-row">
+                <div class="detail-item">
                     <span class="detail-label">Subscription End:</span>
-                    <span class="detail-value no-link">{{ $subscription_end }}</span>
+                    <span class="detail-value">{{ $subscription_end }}</span>
                 </div>
-                <div class="detail-row">
+                <div class="detail-item">
                     <span class="detail-label">Duration:</span>
                     <span class="detail-value">{{ $subscription_duration }}</span>
                 </div>
-                <div class="detail-row">
-                    <span class="detail-label">Account Status:</span>
-                    <span class="detail-value">
-                        <span class="status-badge">Active</span>
-                    </span>
+                <div class="detail-item">
+                    <span class="detail-label">Payment Method:</span>
+                    <span class="detail-value">{{ $payment_method }}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Approval Date:</span>
+                    <span class="detail-value">{{ $approval_date }}</span>
                 </div>
             </div>
 
             <!-- Instructions -->
-            <div class="instructions" role="region" aria-label="Next Steps">
-                <h3>What's Next?</h3>
-                <p style="margin-bottom: 12px;">You can now access all premium features:</p>
-                <ul style="margin: 0; padding-left: 20px;">
-                    <li style="margin-bottom: 6px;">Browse and enroll in courses</li>
-                    <li style="margin-bottom: 6px;">Access exclusive learning materials</li>
-                    <li style="margin-bottom: 6px;">Download resources and certificates</li>
-                    <li style="margin-bottom: 6px;">Track your learning progress</li>
-                    <li>Participate in discussions and forums</li>
-                </ul>
-            </div>
+            <p>You now have access to all premium learning materials and features.</p>
 
-            <div style="text-align: center; margin: 24px 0;">
+            <p style="text-align: center;">
                 <a href="{{ $app_url }}/dashboard" class="button" role="button" aria-label="Go to Your Dashboard">
-                    Go to Your Dashboard
+                    Go to Dashboard
                 </a>
-            </div>
+            </p>
             
-            <p style="margin-bottom: 20px; line-height: 1.6;">If you have any questions about your subscription or need assistance, please contact our support team.</p>
+            <p>If you have any questions about your subscription, please contact our support team.</p>
             
             <!-- Transactional Notice -->
             <div class="transactional-notice" role="contentinfo">
                 This is a transactional email related to your account subscription. 
-                You are receiving this email because your payment was approved. 
-                Please do not mark this as spam.
+                You are receiving this email because your payment was approved.
             </div>
         </div>
 
         <!-- Footer -->
         <div class="footer" role="contentinfo">
-            <p style="margin-bottom: 12px;"><strong>Redat Learning Hub</strong><br>
+            <p><strong>Redat Learning Hub</strong><br>
             Empowering education through technology</p>
-            <p style="margin-bottom: 16px; font-size: 13px;">
-                <a href="mailto:support@redatlearninghub.com" aria-label="Email support" style="color: #2563eb;">support@redatlearninghub.com</a> |
-                <a href="https://redatlearninghub.com" aria-label="Visit our website" style="color: #2563eb;">redatlearninghub.com</a>
+            <p>
+                📧 <a href="mailto:support@redatlearninghub.com" aria-label="Email support">support@redatlearninghub.com</a> |
+                🌐 <a href="https://redatlearninghub.com" aria-label="Visit our website">redatlearninghub.com</a>
             </p>
-            <p style="font-size: 11px; margin: 0; color: #9ca3af;">
+            <p style="font-size: 12px; margin-top: 20px; color: #999;">
                 This is an automated transactional message. Please do not reply to this email.<br>
                 © {{ date('Y') }} Redat Learning Hub. All rights reserved.
             </p>
             
-            <!-- Proper unsubscribe link -->
-            <p style="font-size: 11px; margin-top: 16px; color: #9ca3af;">
-                <a href="{{ $app_url }}/preferences" style="color: #9ca3af; text-decoration: underline;">
-                    Update email preferences
+            <!-- Unsubscribe link -->
+            <p style="font-size: 11px; color: #999; margin-top: 15px;">
+                <a href="https://redatlearninghub.com/unsubscribe" style="color: #999; text-decoration: underline;">
+                    Unsubscribe from transactional emails
                 </a>
             </p>
         </div>
@@ -461,26 +351,5 @@
         </tr>
     </table>
     <![endif]-->
-    
-    <!-- Additional anti-spam content (invisible to users) -->
-    <div style="display: none; font-size: 0; line-height: 0; height: 0; max-height: 0; overflow: hidden;">
-        Payment confirmation receipt. Transaction completed. Account updated. Subscription activated. 
-        User requested service. Business transaction confirmation. Account notification.
-        Legal receipt. Important account information. Security notification.
-        This email contains no promotional content. This is not a marketing email.
-        This email is part of normal business operations. This is a customer service email.
-        This email is a response to user action. This email confirms a completed transaction.
-        Do not report as spam. Mark as important. Save this email for your records.
-        This email contains transactional information only. No advertising content included.
-        This is an automated system notification. This is not a bulk email.
-        This email is sent to one recipient only. This is a personalized email.
-        This email contains your personal account information. Keep this email confidential.
-        This email verifies your identity. This email confirms your action.
-        This email is time-sensitive. This email requires no action unless specified.
-        This email is from a verified business. This email is legitimate.
-        This email is safe. This email is not phishing. This email is authentic.
-        This email is from Redat Learning Hub. This email is about your account.
-        This email is important. This email is not junk. This email is not spam.
-    </div>
 </body>
 </html>
