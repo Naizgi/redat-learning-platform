@@ -1,5 +1,7 @@
 <?php
 
+use Illuminate\Http\Request;
+
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Student\PaymentController;
@@ -16,7 +18,13 @@ use App\Http\Controllers\Admin\UploadController;
 use App\Http\Controllers\VideoController;
 use App\Http\Controllers\Admin\AdminUserController; // <-- New User Management Controller
 
-
+Route::options('/{any}', function () {
+    return response('', 200)
+        ->header('Access-Control-Allow-Origin', 'http://localhost:5173')
+        ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+        ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
+        ->header('Access-Control-Allow-Credentials', 'true');
+})->where('any', '.*');
 
 
 
@@ -58,6 +66,8 @@ Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(functio
 
 /* ================= MATERIALS, LIKES, COMMENTS & PROGRESS ================= */
 Route::middleware(['auth:sanctum','subscription.active'])->group(function () {
+/* These routes are defining the endpoints for handling material-related actions in the application.
+Here's a breakdown of what each route is doing: */
     Route::get('/', [MaterialController::class, 'index']); // GET /api/materials
     Route::get('/{material}', [MaterialController::class, 'show']); // GET /api/materials/{id}
     Route::get('/{material}/stream', [MaterialController::class, 'stream']); // GET /api/materials/{id}/stream
