@@ -68,15 +68,15 @@ Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(functio
 Route::middleware(['auth:sanctum','subscription.active'])->group(function () {
 /* These routes are defining the endpoints for handling material-related actions in the application.
 Here's a breakdown of what each route is doing: */
-    Route::get('/', [MaterialController::class, 'index']); // GET /api/materials
-    Route::get('/{material}', [MaterialController::class, 'show']); // GET /api/materials/{id}
-    Route::get('/{material}/stream', [MaterialController::class, 'stream']); // GET /api/materials/{id}/stream
-    Route::get('/{material}/download', [MaterialController::class, 'download']); // GET /api/materials/{id}/download
-    Route::post('/{material}/like', [MaterialController::class, 'like']); // POST /api/materials/{id}/like
-    Route::post('/{material}/comment', [MaterialController::class, 'comment']); // POST /api/materials/{id}/comment
-    Route::post('/{material}/progress', [MaterialController::class, 'updateProgress']); // POST /api/materials/{id}/progress
-    Route::get('/{material}/stats', [MaterialController::class, 'getStats']); // GET /api/materials/{id}/stats
-    Route::get('/recommended', [MaterialController::class, 'getRecommended']);
+    Route::get('/materials', [MaterialController::class, 'index']);
+    Route::get('/materials/recommended', [MaterialController::class, 'getRecommended']);
+    Route::get('/materials/{material}', [MaterialController::class, 'show']);
+    Route::get('/materials/{material}/stream', [MaterialController::class, 'stream']);
+    Route::get('/materials/{material}/download', [MaterialController::class, 'download']);
+    Route::post('/materials/{material}/like', [MaterialController::class, 'like']);
+    Route::post('/materials/{material}/comment', [MaterialController::class, 'comment']);
+    Route::post('/materials/{material}/progress', [MaterialController::class, 'updateProgress']);
+    Route::get('/materials/{material}/stats', [MaterialController::class, 'getStats']);
 
     Route::post('materials/{material}/like', [MaterialLikeController::class,'toggle']);
     Route::post('materials/{material}/comment', [MaterialCommentController::class,'store']);
