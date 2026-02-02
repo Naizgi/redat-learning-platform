@@ -3,32 +3,46 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Carbon\Carbon;
 
 class Subscription extends Model
 {
-    protected $fillable = ['user_id', 'status', 'amount', 'expires_at'];
-    
-    public function __construct(array $attributes = [])
+    use HasFactory;
+
+    protected $fillable = [
+        'user_id',
+        'status',      // active, inactive, canceled, etc.
+        'amount',
+        'start_date',
+        'end_date',    // renamed from expires_at for clarity
+    ];
+
+    protected $dates = [
+        'start_date',
+        'end_date',
+    ];
+
+    /**
+     * Check if the subscription is active.
+     *
+     * @return bool
+     */
+    public function isActive()
     {
-        parent::__construct($attributes);
-        
-        if (!\Schema::hasTable('subscriptions')) {
-            $this->setTable(null);
+        if ($this->status !== 'active') {
+            return false;
         }
+
+        $now = Carbon::now();
+        return $now->between($this->start_date, $this->end_date->endOfDay());
     }
-    
-    public static function where($column, $operator = null, $value = null, $boolean = 'and')
+
+    /**
+     * The user that owns this subscription.
+     */
+    public function user()
     {
-        $instance = new static;
-        
-        if (!\Schema::hasTable('subscriptions')) {
-            // Return a fake query builder
-            return new class {
-                public function count() { return 0; }
-                public function get() { return collect(); }
-            };
-        }
-        
-        return parent::where($column, $operator, $value, $boolean);
+        return $this->belongsTo(User::class);
     }
 }
