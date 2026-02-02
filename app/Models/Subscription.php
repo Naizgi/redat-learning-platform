@@ -3,46 +3,25 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Carbon\Carbon;
+use Illuminate\Support\Carbon;
 
 class Subscription extends Model
 {
-    use HasFactory;
+    protected $fillable = ['user_id', 'status', 'amount', 'expires_at'];
 
-    protected $fillable = [
-        'user_id',
-        'status',      // active, inactive, canceled, etc.
-        'amount',
-        'start_date',
-        'end_date',    // renamed from expires_at for clarity
+    // Tell Laravel to treat 'expires_at' as a datetime
+    protected $casts = [
+        'expires_at' => 'datetime',
     ];
 
-    protected $dates = [
-        'start_date',
-        'end_date',
-    ];
-
-    /**
-     * Check if the subscription is active.
-     *
-     * @return bool
-     */
+    // Check if subscription is active
     public function isActive()
     {
-        if ($this->status !== 'active') {
-            return false;
-        }
+        // Make sure expires_at is a Carbon instance
+        $expires = $this->expires_at instanceof Carbon
+            ? $this->expires_at
+            : Carbon::parse($this->expires_at);
 
-        $now = Carbon::now();
-        return $now->between($this->start_date, $this->end_date->endOfDay());
-    }
-
-    /**
-     * The user that owns this subscription.
-     */
-    public function user()
-    {
-        return $this->belongsTo(User::class);
+        return $this->status === 'active' && $expires->endOfDay()->gte(now());
     }
 }
