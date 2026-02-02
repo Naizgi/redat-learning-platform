@@ -84,4 +84,18 @@ class User extends Authenticatable
     return $this->hasOne(Subscription::class)->latestOfMany();
 }
 
+  public function getFileUrlAttribute()
+    {
+        return route('materials.stream', ['material' => $this->id]);
+    }
+    
+    public function getDownloadUrlAttribute()
+    {
+        return route('materials.download', ['material' => $this->id]);
+    }
+
+
+
+
+
 }
