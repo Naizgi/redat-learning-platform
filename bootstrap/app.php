@@ -12,20 +12,16 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        // Add your custom CORS middleware
+
+        // ✅ CORS ONLY for API
         $middleware->api(prepend: [
             \App\Http\Middleware\CorsMiddleware::class,
         ]);
-        
-        // Also add to web middleware if login route is in web.php
-        $middleware->web(append: [
-            \App\Http\Middleware\CorsMiddleware::class,
-        ]);
-        
-        // ADD THIS SECTION - Register middleware aliases
+
+        // ✅ Middleware aliases
         $middleware->alias([
             'role' => \App\Http\Middleware\CheckRole::class,
-            'subscription.active' => \App\Http\Middleware\CheckSubscription::class, // If you need it
+            'subscription.active' => \App\Http\Middleware\CheckSubscription::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
