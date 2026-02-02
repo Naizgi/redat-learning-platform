@@ -4,26 +4,36 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
-use Symfony\Component\HttpFoundation\Response;
 
 class ActiveSubscription
 {
     /**
      * Handle an incoming request.
      *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
+     * @param  \Illuminate\Http\Request  $request
+     * @param  \Closure  $next
+     * @return \Illuminate\Http\Response
      */
- public function handle($request, Closure $next)
-{
-    $subscription = $request->user()->subscription;
+    public function handle(Request $request, Closure $next)
+    {
+        $user = $request->user();
 
-    if (!$subscription || !$subscription->isActive()) {
-        return response()->json([
-            'message' => 'Subscription expired or inactive',
-        ], 403);
+        if (!$user) {
+            return response()->json([
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+
+        // Get the user's active subscription
+        $subscription = $user->subscription;
+
+        // Check if subscription exists and is active
+        if (!$subscription || !$subscription->isActive()) {
+            return response()->json([
+                'message' => 'Subscription expired or inactive',
+            ], 403);
+        }
+
+        return $next($request);
     }
-
-    return $next($request);
-}
-
 }
