@@ -11,62 +11,70 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MaterialController extends Controller
 {
-    public function index(Request $request)
-    {
+   public function index(Request $request)
+{
+    try {
+        $user = $request->user();
+
         $query = Material::where('is_published', true)
-            ->withCount('likes')
             ->with(['comments.user', 'department'])
-            ->latest();
+            ->withCount(['likes', 'comments'])
+            ->orderByDesc('created_at');
 
-        // Apply department filter if user is logged in
-        if ($request->user()) {
-            $query->where('department_id', $request->user()->department_id);
-        }
-
-        // Allow filtering by multiple parameters
-        if ($request->has('department')) {
-            $query->whereHas('department', function ($q) use ($request) {
-                $q->where('name', 'like', '%' . $request->department . '%');
-            });
-        }
-
-        if ($request->has('department_id')) {
+        // ✅ Always prefer explicit department_id from request
+        if ($request->filled('department_id')) {
             $query->where('department_id', $request->department_id);
         }
+        // ✅ Otherwise fallback to authenticated user's department
+        elseif ($user && $user->department_id) {
+            $query->where('department_id', $user->department_id);
+        }
 
-        if ($request->has('level')) {
+        if ($request->filled('level')) {
             $query->where('level', $request->level);
         }
 
-        if ($request->has('type')) {
+        if ($request->filled('type')) {
             $query->where('type', $request->type);
         }
 
-        if ($request->has('course_id')) {
+        if ($request->filled('course_id')) {
             $query->where('course_id', $request->course_id);
         }
 
-        // Search functionality
-        if ($request->has('search')) {
+        if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('title', 'like', '%' . $search . '%')
-                  ->orWhere('description', 'like', '%' . $search . '%')
-                  ->orWhere('tags', 'like', '%' . $search . '%');
+                $q->where('title', 'like', "%$search%")
+                  ->orWhere('description', 'like', "%$search%")
+                  ->orWhere('tags', 'like', "%$search%");
             });
         }
 
-        // Pagination or limit
-        if ($request->has('limit')) {
-            return $query->take($request->limit)->get();
+        if ($request->filled('limit')) {
+            return response()->json([
+                'success' => true,
+                'data' => $query->limit((int)$request->limit)->get()
+            ]);
         }
 
-        if ($request->has('page') || $request->has('per_page')) {
-            return $query->paginate($request->per_page ?? 20);
-        }
+        return response()->json([
+            'success' => true,
+            'data' => $query->paginate($request->per_page ?? 20)
+        ]);
 
-        return $query->get();
+    } catch (\Throwable $e) {
+        \Log::error('Materials index error', [
+            'message' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+        ]);
+
+        return response()->json([
+            'message' => 'Server Error'
+        ], 500);
     }
+}
+
 
     public function show(Material $material)
     {
@@ -233,16 +241,23 @@ class MaterialController extends Controller
         ]);
     }
 
-    private function authorizeAccess(Material $material)
-    {
-        if (!$material->is_published) {
-            abort(404, 'Material not found');
-        }
+private function authorizeAccess(Material $material)
+{
+    $user = auth()->user();
 
-        if ($material->department_id !== auth()->user()->department_id) {
-            abort(403, 'You do not have access to this material');
-        }
+    if (!$user) {
+        abort(401, 'Unauthenticated');
     }
+
+    if (!$material->is_published) {
+        abort(404, 'Material not found');
+    }
+
+    if ((int)$material->department_id !== (int)$user->department_id) {
+        abort(403, 'You do not have access to this material');
+    }
+}
+
 
     // For admin dashboard (separate endpoint)
     public function getAllMaterials(Request $request)
