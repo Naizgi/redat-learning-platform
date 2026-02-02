@@ -69,7 +69,6 @@ Route::middleware(['auth:sanctum','subscription.active'])->group(function () {
 /* These routes are defining the endpoints for handling material-related actions in the application.
 Here's a breakdown of what each route is doing: */
     Route::get('/materials', [MaterialController::class, 'index']);
-    Route::get('/materials/recommended', [MaterialController::class, 'getRecommended']);
     Route::get('/materials/{material}', [MaterialController::class, 'show']);
     Route::get('/materials/{material}/stream', [MaterialController::class, 'stream']);
     Route::get('/materials/{material}/download', [MaterialController::class, 'download']);
@@ -77,6 +76,7 @@ Here's a breakdown of what each route is doing: */
     Route::post('/materials/{material}/comment', [MaterialController::class, 'comment']);
     Route::post('/materials/{material}/progress', [MaterialController::class, 'updateProgress']);
     Route::get('/materials/{material}/stats', [MaterialController::class, 'getStats']);
+    Route::get('/materials/recommended', [MaterialController::class, 'getRecommended']);
 
     Route::post('materials/{material}/like', [MaterialLikeController::class,'toggle']);
     Route::post('materials/{material}/comment', [MaterialCommentController::class,'store']);
