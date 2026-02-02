@@ -14,32 +14,40 @@ class MaterialController extends Controller
    public function index(Request $request)
 {
     try {
-        $user = $request->user();
+        \Log::info('Materials index called', [
+            'department_id' => $request->department_id,
+            'user_id' => $request->user() ? $request->user()->id : null
+        ]);
 
         $query = Material::where('is_published', true)
-            ->with(['comments.user', 'department'])
+            ->with(['department']) // Only load department, not comments for listing
             ->withCount(['likes', 'comments'])
             ->orderByDesc('created_at');
 
-        // ✅ Always prefer explicit department_id from request
+        // Apply department filter
         if ($request->filled('department_id')) {
             $query->where('department_id', $request->department_id);
         }
-        // ✅ Otherwise fallback to authenticated user's department
-        elseif ($user && $user->department_id) {
-            $query->where('department_id', $user->department_id);
+        // If user is authenticated and no department_id provided, use user's department
+        elseif ($request->user() && $request->user()->department_id) {
+            $query->where('department_id', $request->user()->department_id);
+        }
+        // If no department specified, return empty or all? Let's return empty
+        else {
+            return response()->json([
+                'success' => true,
+                'data' => [],
+                'message' => 'No department specified'
+            ]);
         }
 
+        // Apply other filters
         if ($request->filled('level')) {
             $query->where('level', $request->level);
         }
 
         if ($request->filled('type')) {
             $query->where('type', $request->type);
-        }
-
-        if ($request->filled('course_id')) {
-            $query->where('course_id', $request->course_id);
         }
 
         if ($request->filled('search')) {
@@ -51,26 +59,31 @@ class MaterialController extends Controller
             });
         }
 
+        // Handle limit
         if ($request->filled('limit')) {
-            return response()->json([
-                'success' => true,
-                'data' => $query->limit((int)$request->limit)->get()
-            ]);
+            $materials = $query->limit((int)$request->limit)->get();
+        } else {
+            // Default pagination
+            $materials = $query->paginate($request->per_page ?? 20);
         }
 
         return response()->json([
             'success' => true,
-            'data' => $query->paginate($request->per_page ?? 20)
+            'data' => $materials,
+            'count' => $materials->count()
         ]);
 
     } catch (\Throwable $e) {
         \Log::error('Materials index error', [
             'message' => $e->getMessage(),
             'trace' => $e->getTraceAsString(),
+            'request' => $request->all()
         ]);
 
         return response()->json([
-            'message' => 'Server Error'
+            'success' => false,
+            'message' => 'Server Error: ' . $e->getMessage(),
+            'error' => env('APP_DEBUG') ? $e->getTraceAsString() : null
         ], 500);
     }
 }
@@ -253,8 +266,9 @@ private function authorizeAccess(Material $material)
         abort(404, 'Material not found');
     }
 
+    // Check if user has access to this material's department
     if ((int)$material->department_id !== (int)$user->department_id) {
-        abort(403, 'You do not have access to this material');
+        abort(403, 'You do not have access to this material. Your department: ' . $user->department_id . ', Material department: ' . $material->department_id);
     }
 }
 

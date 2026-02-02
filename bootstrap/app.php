@@ -21,7 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // ✅ Middleware aliases
         $middleware->alias([
             'role' => \App\Http\Middleware\CheckRole::class,
-            'subscription.active' => \App\Http\Middleware\CheckSubscription::class,
+            'subscription.active' => \App\Http\Middleware\ActiveSubscription::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
