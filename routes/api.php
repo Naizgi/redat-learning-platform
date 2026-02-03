@@ -77,7 +77,7 @@ Route::middleware(['auth:sanctum','subscription.active'])->group(function () {
     // Remove these duplicate routes - they're already defined above
     // Route::post('materials/{material}/like', [MaterialLikeController::class,'toggle']);
     // Route::post('materials/{material}/comment', [MaterialCommentController::class,'store']);
-    // Route::post('materials/{material}/progress', [ProgressController::class,'update']);
+     Route::post('materials/{material}/progress', [ProgressController::class,'update']);
 
     Route::get('/progress', [ProgressController::class, 'index']);
     Route::get('/progress/{material}', [ProgressController::class, 'show']);
