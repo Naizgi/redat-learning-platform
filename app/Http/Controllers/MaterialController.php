@@ -103,11 +103,10 @@ class MaterialController extends Controller
         // Increment view count
         $material->increment('views_count');
 
-        // Load related data
+        // Load related data - removed 'course' relationship
         $material->load([
             'comments.user', 
             'department',
-            'course',
             'likes' => function ($query) {
                 $query->where('user_id', auth()->id());
             }
@@ -436,7 +435,7 @@ class MaterialController extends Controller
             abort(403, 'Unauthorized');
         }
 
-        $query = Material::with(['department', 'course'])
+        $query = Material::with(['department']) // Removed 'course'
             ->withCount(['likes', 'comments']);
 
         // Filtering
