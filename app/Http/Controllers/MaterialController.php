@@ -269,50 +269,69 @@ class MaterialController extends Controller
         ]);
     }
 
-    public function updateProgress(Request $request, Material $material)
-    {
-        $this->authorizeAccess($material);
+public function updateProgress(Request $request, Material $material)
+{
+    $this->authorizeAccess($material);
 
-        $request->validate([
-            'progress' => 'required|numeric|min:0|max:100',
-            'time_spent' => 'required|integer|min:0'
-        ]);
+    $request->validate([
+        'progress' => 'required|numeric|min:0|max:100',
+        'time_spent' => 'required|integer|min:0'
+    ]);
 
-        $progress = $material->progress()->updateOrCreate(
-            ['user_id' => auth()->id()],
-            [
-                'progress_percentage' => $request->progress,
-                'time_spent_seconds' => $request->time_spent,
-                'completed' => $request->progress >= 100
-            ]
-        );
+    $progress = $material->progress()->updateOrCreate(
+        ['user_id' => auth()->id()],
+        [
+            'progress' => $request->progress, // Changed from progress_percentage
+            'time_spent_seconds' => $request->time_spent,
+            'completed' => $request->progress >= 100
+        ]
+    );
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Progress updated successfully',
-            'data' => $progress
-        ]);
+    return response()->json([
+        'success' => true,
+        'message' => 'Progress updated successfully',
+        'data' => $progress
+    ]);
+}
+
+public function getStats(Material $material)
+{
+    $this->authorizeAccess($material);
+
+    // Get user progress - handle missing progress table gracefully
+    $userProgress = null;
+    try {
+        $userProgress = $material->progress()->where('user_id', auth()->id())->first();
+    } catch (\Exception $e) {
+        \Log::warning('Error fetching progress', ['error' => $e->getMessage()]);
+        // Continue without progress data
     }
 
-    public function getStats(Material $material)
-    {
-        $this->authorizeAccess($material);
+    $stats = [
+        'total_views' => $material->views_count ?? 0,
+        'total_downloads' => $material->download_count ?? 0,
+        'total_likes' => $material->likes()->count() ?? 0,
+        'total_comments' => $material->comments()->count() ?? 0,
+        'average_rating' => $material->average_rating ?? 0,
+        'user_liked' => $material->likes()->where('user_id', auth()->id())->exists(),
+        'user_progress' => $userProgress ? [
+            'progress_percentage' => $userProgress->progress ?? 0,
+            'time_spent_seconds' => $userProgress->time_spent_seconds ?? 0,
+            'last_page' => $userProgress->last_page ?? 1,
+            'completed' => $userProgress->completed ?? false
+        ] : [
+            'progress_percentage' => 0,
+            'time_spent_seconds' => 0,
+            'last_page' => 1,
+            'completed' => false
+        ]
+    ];
 
-        $stats = [
-            'total_views' => $material->views_count,
-            'total_downloads' => $material->download_count,
-            'total_likes' => $material->likes_count,
-            'total_comments' => $material->comments_count,
-            'average_rating' => $material->average_rating,
-            'user_liked' => $material->likes()->where('user_id', auth()->id())->exists(),
-            'user_progress' => $material->progress()->where('user_id', auth()->id())->first(),
-        ];
-
-        return response()->json([
-            'success' => true,
-            'data' => $stats
-        ]);
-    }
+    return response()->json([
+        'success' => true,
+        'data' => $stats
+    ]);
+}
 
     public function getRecommended(Request $request)
     {
