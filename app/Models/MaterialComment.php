@@ -25,4 +25,17 @@ class MaterialComment extends Model
         
         return parent::count();
     }
+
+        public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get the material that the comment belongs to.
+     */
+    public function material(): BelongsTo
+    {
+        return $this->belongsTo(Material::class);
+    }
 }
