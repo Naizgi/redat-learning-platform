@@ -125,7 +125,17 @@ class MaterialController extends Controller
 
     public function stream(Material $material)
 {
-    $this->authorizeAccess($material);
+    // Remove or modify the authorizeAccess check for streaming
+    // Let's check if material is published, but not require authentication
+    if (!$material->is_published) {
+        abort(404, 'Material not found');
+    }
+    
+    // Optional: Add a public access flag or check if file should be publicly accessible
+    // You could add a new column to materials table: is_publicly_accessible
+    // if (!$material->is_publicly_accessible) {
+    //     $this->authorizeAccess($material); // Fall back to auth check
+    // }
 
     // Get the correct storage path
     $storagePath = $this->getStoragePath($material);
@@ -163,7 +173,7 @@ class MaterialController extends Controller
         }
     }
 
-    // Increment view count
+    // Increment view count instead of download count for streaming
     $material->increment('views_count');
 
     $headers = [
@@ -171,8 +181,7 @@ class MaterialController extends Controller
         'Content-Disposition' => 'inline; filename="' . $material->file_name . '"',
         'Content-Length' => Storage::size($storagePath),
         'Cache-Control' => 'public, max-age=31536000',
-        'Access-Control-Allow-Origin' => '*', // Allow cross-origin
-        'Access-Control-Allow-Credentials' => 'true',
+        'Access-Control-Allow-Origin' => '*', // Allow cross-origin access for iframes
     ];
 
     \Log::info('Streaming file', [
