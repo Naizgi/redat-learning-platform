@@ -125,74 +125,152 @@ class MaterialController extends Controller
 
     public function stream(Material $material)
 {
-    // Remove or modify the authorizeAccess check for streaming
-    // Let's check if material is published, but not require authentication
-    if (!$material->is_published) {
-        abort(404, 'Material not found');
-    }
-    
-    // Optional: Add a public access flag or check if file should be publicly accessible
-    // You could add a new column to materials table: is_publicly_accessible
-    // if (!$material->is_publicly_accessible) {
-    //     $this->authorizeAccess($material); // Fall back to auth check
-    // }
-
-    // Get the correct storage path
-    $storagePath = $this->getStoragePath($material);
-    
-    if (!Storage::exists($storagePath)) {
-        \Log::error('File not found in storage', [
+    try {
+        // Remove all authentication checks for public streaming
+        // Only check if material exists and is published
+        if (!$material->exists) {
+            abort(404, 'Material not found');
+        }
+        
+        // Check if material is published
+        if (!$material->is_published) {
+            \Log::warning('Attempt to access unpublished material', [
+                'material_id' => $material->id,
+                'ip' => request()->ip()
+            ]);
+            abort(404, 'Material not available');
+        }
+        
+        // Get the correct storage path
+        $storagePath = $this->getStoragePath($material);
+        
+        // Debug logging
+        \Log::info('Attempting to stream file', [
             'material_id' => $material->id,
             'file_name' => $material->file_name,
             'storage_path' => $storagePath,
-            'possible_paths' => [
-                'public/materials/' . $material->file_name,
-                'materials/' . $material->file_name,
-                $material->file_path
-            ]
+            'storage_disk' => config('filesystems.default'),
+            'all_disks' => config('filesystems.disks')
         ]);
         
-        // Try to find the file in common locations
-        $possiblePaths = [
-            'public/materials/' . $material->file_name,
-            'materials/' . $material->file_name,
-            $material->file_name,
-            $material->file_path
-        ];
+        // Check if file exists using multiple methods
+        $fileExists = Storage::exists($storagePath);
         
-        foreach ($possiblePaths as $path) {
-            if (Storage::exists($path)) {
-                $storagePath = $path;
-                \Log::info('Found file at alternative path', ['path' => $path]);
-                break;
+        if (!$fileExists) {
+            // Try to find the file in common locations
+            $possiblePaths = [
+                'public/materials/' . $material->file_name,
+                'materials/' . $material->file_name,
+                'public/' . $material->file_name,
+                $material->file_name,
+                $material->file_path,
+                'app/public/materials/' . $material->file_name,
+                storage_path('app/public/materials/' . $material->file_name),
+                storage_path('app/materials/' . $material->file_name)
+            ];
+            
+            \Log::info('Checking alternative paths', ['paths' => $possiblePaths]);
+            
+            foreach ($possiblePaths as $path) {
+                try {
+                    if (Storage::exists($path)) {
+                        $storagePath = $path;
+                        \Log::info('Found file at alternative path', ['path' => $path]);
+                        $fileExists = true;
+                        break;
+                    }
+                } catch (\Exception $e) {
+                    // Continue checking other paths
+                    continue;
+                }
+            }
+            
+            // Also check physical file system
+            if (!$fileExists) {
+                $physicalPath = storage_path('app/' . $storagePath);
+                if (file_exists($physicalPath)) {
+                    \Log::info('Found file via physical path', ['path' => $physicalPath]);
+                    $fileExists = true;
+                } else {
+                    // Try with public prefix
+                    $physicalPath = storage_path('app/public/' . $material->file_name);
+                    if (file_exists($physicalPath)) {
+                        $storagePath = 'public/' . $material->file_name;
+                        $fileExists = true;
+                    }
+                }
+            }
+            
+            if (!$fileExists) {
+                \Log::error('File not found in any location', [
+                    'material_id' => $material->id,
+                    'file_name' => $material->file_name,
+                    'checked_paths' => $possiblePaths
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'File not found in storage system',
+                    'error' => 'FILE_NOT_FOUND'
+                ], 404);
             }
         }
         
-        if (!Storage::exists($storagePath)) {
-            abort(404, 'File not found. Checked paths: ' . implode(', ', $possiblePaths));
+        // Increment view count
+        $material->increment('views_count');
+        
+        // Get file details
+        try {
+            $mimeType = Storage::mimeType($storagePath);
+            $fileSize = Storage::size($storagePath);
+            
+            \Log::info('File details', [
+                'mime_type' => $mimeType,
+                'file_size' => $fileSize,
+                'final_path' => $storagePath
+            ]);
+        } catch (\Exception $e) {
+            \Log::warning('Could not get file details', ['error' => $e->getMessage()]);
+            $mimeType = 'application/octet-stream';
+            $fileSize = 0;
         }
+        
+        // Determine appropriate headers
+        $headers = [
+            'Content-Type' => $mimeType,
+            'Content-Disposition' => 'inline; filename="' . basename($material->file_name) . '"',
+            'Content-Length' => $fileSize,
+            'Cache-Control' => 'public, max-age=31536000',
+            'Access-Control-Allow-Origin' => '*',
+            'Access-Control-Allow-Methods' => 'GET, HEAD',
+            'Access-Control-Allow-Headers' => 'Content-Type, Authorization',
+            'Access-Control-Expose-Headers' => 'Content-Disposition',
+        ];
+        
+        // For PDF files, add additional headers for better browser support
+        if ($mimeType === 'application/pdf') {
+            $headers['Content-Type'] = 'application/pdf';
+            $headers['Content-Disposition'] = 'inline; filename="' . basename($material->file_name) . '"';
+        }
+        
+        \Log::info('Streaming file with headers', ['headers' => $headers]);
+        
+        // Return the file response
+        return Storage::response($storagePath, basename($material->file_name), $headers);
+        
+    } catch (\Exception $e) {
+        \Log::error('Streaming error', [
+            'material_id' => $material->id ?? 'unknown',
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'Error streaming file: ' . $e->getMessage(),
+            'error' => 'STREAM_ERROR'
+        ], 500);
     }
-
-    // Increment view count instead of download count for streaming
-    $material->increment('views_count');
-
-    $headers = [
-        'Content-Type' => Storage::mimeType($storagePath),
-        'Content-Disposition' => 'inline; filename="' . $material->file_name . '"',
-        'Content-Length' => Storage::size($storagePath),
-        'Cache-Control' => 'public, max-age=31536000',
-        'Access-Control-Allow-Origin' => '*', // Allow cross-origin access for iframes
-    ];
-
-    \Log::info('Streaming file', [
-        'material_id' => $material->id,
-        'file_name' => $material->file_name,
-        'storage_path' => $storagePath,
-        'content_type' => $headers['Content-Type'],
-        'file_size' => $headers['Content-Length']
-    ]);
-
-    return Storage::response($storagePath, $material->file_name, $headers);
 }
 
     public function download(Material $material)
