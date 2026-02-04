@@ -25,11 +25,11 @@ Route::options('/{any}', function () {
         ->header('Access-Control-Allow-Credentials', 'true');
 })->where('any', '.*');
 
+/* ================= PUBLIC ROUTES (NO AUTH REQUIRED) ================= */
 Route::get('departments', [DepartmentController::class, 'index']);
 Route::post('student/payments/submit', [PaymentController::class, 'submit']);
 
-/* ================= PUBLIC ROUTES ================= */
-// Public streaming endpoint - NO AUTH REQUIRED
+// PUBLIC STREAMING ENDPOINT - MUST BE OUTSIDE ALL AUTH MIDDLEWARE
 Route::get('/materials/{material}/stream', [MaterialController::class, 'stream'])->name('materials.stream');
 
 /* ================= AUTH ROUTES ================= */
@@ -64,25 +64,19 @@ Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(functio
 });
 
 /* ================= MATERIALS, LIKES, COMMENTS & PROGRESS ================= */
+// NOTE: The stream route has been moved to PUBLIC ROUTES above
 Route::middleware(['auth:sanctum','subscription.active'])->group(function () {
     Route::get('/materials', [MaterialController::class, 'index']);
     Route::get('/materials/{material}', [MaterialController::class, 'show']);
-    
-    // REMOVED stream route from here - it's now public above
-    // REMOVED: Route::get('/materials/{material}/stream', [MaterialController::class, 'stream'])->name('materials.stream');
-    
     Route::get('/materials/{material}/download', [MaterialController::class, 'download'])->name('materials.download');
-    
     Route::post('/materials/{material}/like', [MaterialController::class, 'like']);
     Route::post('/materials/{material}/comment', [MaterialController::class, 'comment']);
     Route::post('/materials/{material}/progress', [MaterialController::class, 'updateProgress']);
     Route::get('/materials/{material}/stats', [MaterialController::class, 'getStats']);
     Route::get('/materials/recommended', [MaterialController::class, 'getRecommended']);
 
-    // Remove these duplicate routes - they're already defined above
-    // Route::post('materials/{material}/like', [MaterialLikeController::class,'toggle']);
-    // Route::post('materials/{material}/comment', [MaterialCommentController::class,'store']);
-     Route::post('materials/{material}/progress', [ProgressController::class,'update']);
+    // Keep this for backward compatibility
+    Route::post('materials/{material}/progress', [ProgressController::class,'update']);
 
     Route::get('/progress', [ProgressController::class, 'index']);
     Route::get('/progress/{material}', [ProgressController::class, 'show']);
