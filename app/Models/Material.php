@@ -54,9 +54,9 @@ class Material extends Model
         return $this->hasMany(MaterialComment::class);
     }
 
-    public function progress() {
-        return $this->hasMany(MaterialProgress::class);
-    }
+public function progress() {
+    return $this->hasMany(Progress::class);
+}
 
     // Accessor for likes_count
     public function getLikesCountAttribute()
