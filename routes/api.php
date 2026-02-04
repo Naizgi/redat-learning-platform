@@ -28,6 +28,10 @@ Route::options('/{any}', function () {
 Route::get('departments', [DepartmentController::class, 'index']);
 Route::post('student/payments/submit', [PaymentController::class, 'submit']);
 
+/* ================= PUBLIC ROUTES ================= */
+// Public streaming endpoint - NO AUTH REQUIRED
+Route::get('/materials/{material}/stream', [MaterialController::class, 'stream'])->name('materials.stream');
+
 /* ================= AUTH ROUTES ================= */
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
@@ -64,8 +68,9 @@ Route::middleware(['auth:sanctum','subscription.active'])->group(function () {
     Route::get('/materials', [MaterialController::class, 'index']);
     Route::get('/materials/{material}', [MaterialController::class, 'show']);
     
-    // FIXED: Added route names for stream and download
-    Route::get('/materials/{material}/stream', [MaterialController::class, 'stream'])->name('materials.stream');
+    // REMOVED stream route from here - it's now public above
+    // REMOVED: Route::get('/materials/{material}/stream', [MaterialController::class, 'stream'])->name('materials.stream');
+    
     Route::get('/materials/{material}/download', [MaterialController::class, 'download'])->name('materials.download');
     
     Route::post('/materials/{material}/like', [MaterialController::class, 'like']);
