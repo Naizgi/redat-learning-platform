@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo; // Add this import
+use Illuminate\Support\Facades\Schema;
 
 class MaterialComment extends Model
 {
@@ -12,21 +14,21 @@ class MaterialComment extends Model
     {
         parent::__construct($attributes);
         
-        if (!\Schema::hasTable('material_comments')) {
+        if (!Schema::hasTable('material_comments')) {
             $this->setTable(null);
         }
     }
     
     public static function count()
     {
-        if (!\Schema::hasTable('material_comments')) {
+        if (!Schema::hasTable('material_comments')) {
             return 0;
         }
         
         return parent::count();
     }
 
-        public function user(): BelongsTo
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
