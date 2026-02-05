@@ -123,7 +123,7 @@ class MaterialController extends Controller
         ]);
     }
 
-    public function stream(Material $material)
+   public function stream(Material $material)
 {
     try {
         // Remove all authentication checks for public streaming
@@ -150,62 +150,22 @@ class MaterialController extends Controller
             'file_name' => $material->file_name,
             'storage_path' => $storagePath,
             'storage_disk' => config('filesystems.default'),
+            'exists' => Storage::exists($storagePath)
         ]);
         
         // Check if file exists
         if (!Storage::exists($storagePath)) {
-            // Try to find the file in common locations
-            $possiblePaths = [
-                'public/materials/' . $material->file_name,
-                'materials/' . $material->file_name,
-                'public/' . $material->file_name,
-                $material->file_name,
-                $material->file_path,
-                'app/public/materials/' . $material->file_name,
-                storage_path('app/public/materials/' . $material->file_name),
-                storage_path('app/materials/' . $material->file_name)
-            ];
+            \Log::error('File not found in storage', [
+                'material_id' => $material->id,
+                'storage_path' => $storagePath,
+                'file_name' => $material->file_name
+            ]);
             
-            \Log::info('Checking alternative paths', ['paths' => $possiblePaths]);
-            
-            foreach ($possiblePaths as $path) {
-                try {
-                    if (Storage::exists($path)) {
-                        $storagePath = $path;
-                        \Log::info('Found file at alternative path', ['path' => $path]);
-                        break;
-                    }
-                } catch (\Exception $e) {
-                    // Continue checking other paths
-                    continue;
-                }
-            }
-            
-            // Also check physical file system
-            if (!Storage::exists($storagePath)) {
-                $physicalPath = storage_path('app/' . $storagePath);
-                if (file_exists($physicalPath)) {
-                    \Log::info('Found file via physical path', ['path' => $physicalPath]);
-                } else {
-                    // Try with public prefix
-                    $physicalPath = storage_path('app/public/' . $material->file_name);
-                    if (file_exists($physicalPath)) {
-                        $storagePath = 'public/' . $material->file_name;
-                    } else {
-                        \Log::error('File not found in any location', [
-                            'material_id' => $material->id,
-                            'file_name' => $material->file_name,
-                            'checked_paths' => $possiblePaths
-                        ]);
-                        
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'File not found in storage system',
-                            'error' => 'FILE_NOT_FOUND'
-                        ], 404);
-                    }
-                }
-            }
+            return response()->json([
+                'success' => false,
+                'message' => 'File not found in storage system',
+                'error' => 'FILE_NOT_FOUND'
+            ], 404);
         }
         
         // Increment view count
@@ -219,16 +179,25 @@ class MaterialController extends Controller
             \Log::info('File details', [
                 'mime_type' => $mimeType,
                 'file_size' => $fileSize,
-                'final_path' => $storagePath
+                'final_path' => $storagePath,
+                'is_video' => str_starts_with($mimeType, 'video/')
             ]);
         } catch (\Exception $e) {
             \Log::warning('Could not get file details', ['error' => $e->getMessage()]);
-            $mimeType = 'application/octet-stream';
-            $fileSize = 0;
+            $mimeType = 'video/mp4'; // Default to mp4 for video files
+            $fileSize = Storage::size($storagePath);
         }
         
         // Check if it's a video file
-        $isVideo = str_starts_with($mimeType, 'video/');
+        $isVideo = str_starts_with($mimeType, 'video/') || 
+                  $material->type === 'video' ||
+                  str_ends_with(strtolower($material->file_name), '.mp4') ||
+                  str_ends_with(strtolower($storagePath), '.mp4');
+        
+        // If we can't determine mime type but it should be video, set appropriate headers
+        if ($isVideo && !str_starts_with($mimeType, 'video/')) {
+            $mimeType = 'video/mp4';
+        }
         
         // Base headers
         $headers = [
@@ -236,14 +205,14 @@ class MaterialController extends Controller
             'Content-Length' => $fileSize,
             'Cache-Control' => 'public, max-age=31536000',
             'Access-Control-Allow-Origin' => '*',
-            'Access-Control-Allow-Methods' => 'GET, HEAD',
-            'Access-Control-Allow-Headers' => 'Content-Type, Authorization, Range',
+            'Access-Control-Allow-Methods' => 'GET, HEAD, OPTIONS',
+            'Access-Control-Allow-Headers' => 'Content-Type, Authorization, Range, Accept-Encoding',
             'Access-Control-Expose-Headers' => 'Content-Length, Content-Range, Accept-Ranges',
+            'Accept-Ranges' => 'bytes',
         ];
         
         // Add video-specific headers for streaming support
         if ($isVideo) {
-            $headers['Accept-Ranges'] = 'bytes';
             $headers['Content-Disposition'] = 'inline'; // Play inline, not download
             
             // Handle Range requests for video seeking
@@ -270,7 +239,8 @@ class MaterialController extends Controller
                     // Update headers for partial content
                     $headers['Content-Range'] = 'bytes ' . $start . '-' . $end . '/' . $fileSize;
                     $headers['Content-Length'] = $length;
-                    unset($headers['Content-Disposition']); // Remove disposition for partial content
+                    $headers['HTTP/1.1'] = '206 Partial Content';
+                    $statusCode = 206;
                     
                     \Log::info('Serving partial content', [
                         'start' => $start,
@@ -279,24 +249,8 @@ class MaterialController extends Controller
                         'range' => $rangeHeader
                     ]);
                     
-                    // Stream partial content
-                    return response()->stream(function () use ($storagePath, $start, $length) {
-                        $stream = Storage::readStream($storagePath);
-                        fseek($stream, $start);
-                        
-                        $remaining = $length;
-                        $chunkSize = 8192;
-                        
-                        while ($remaining > 0 && !feof($stream)) {
-                            $bytesToRead = min($chunkSize, $remaining);
-                            $data = fread($stream, $bytesToRead);
-                            echo $data;
-                            $remaining -= $bytesToRead;
-                            flush();
-                        }
-                        
-                        fclose($stream);
-                    }, 206, $headers);
+                    // Stream partial content more efficiently
+                    return Storage::response($storagePath, null, $headers, 'attachment', $statusCode);
                 }
             }
         } else {
@@ -306,32 +260,26 @@ class MaterialController extends Controller
             // For PDF files, add additional headers for better browser support
             if ($mimeType === 'application/pdf') {
                 $headers['Content-Type'] = 'application/pdf';
-                $headers['Content-Disposition'] = 'inline; filename="' . basename($material->file_name) . '"';
             }
         }
         
         \Log::info('Streaming file with headers', [
             'is_video' => $isVideo,
-            'headers' => $headers
+            'headers' => $headers,
+            'status_code' => 200
         ]);
         
         // For full file requests (no range header or non-video files)
-        return response()->stream(function () use ($storagePath) {
-            $stream = Storage::readStream($storagePath);
-            
-            while (!feof($stream)) {
-                echo fread($stream, 8192);
-                flush();
-            }
-            
-            fclose($stream);
-        }, 200, $headers);
+        // Use Laravel's built-in response for better performance
+        return Storage::response($storagePath, null, $headers);
         
     } catch (\Exception $e) {
         \Log::error('Streaming error', [
             'material_id' => $material->id ?? 'unknown',
             'error' => $e->getMessage(),
-            'trace' => $e->getTraceAsString()
+            'trace' => $e->getTraceAsString(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine()
         ]);
         
         return response()->json([
@@ -550,31 +498,65 @@ public function getStats(Material $material)
     /**
      * Helper method to get the correct storage path
      */
-    private function getStoragePath(Material $material): string
-    {
-        // If file_path is already set and exists, use it
-        if (!empty($material->file_path) && Storage::exists($material->file_path)) {
-            return $material->file_path;
+   /**
+ * Helper method to get the correct storage path
+ */
+private function getStoragePath(Material $material): string
+{
+    // If file_path is already set and exists, use it
+    if (!empty($material->file_path)) {
+        // Clean the path and check if it exists
+        $cleanPath = ltrim($material->file_path, '/\\');
+        
+        // Try different variations of the path
+        $possiblePaths = [
+            $cleanPath,
+            'public/' . $cleanPath,
+            'storage/app/public/' . $cleanPath,
+            'materials/' . basename($cleanPath),
+            'public/materials/' . basename($cleanPath),
+        ];
+        
+        foreach ($possiblePaths as $path) {
+            if (Storage::exists($path)) {
+                \Log::info('Found file at path', ['path' => $path, 'material_id' => $material->id]);
+                return $path;
+            }
         }
-
-        // Try common storage paths
+    }
+    
+    // Try with file_name if file_path didn't work
+    if (!empty($material->file_name)) {
         $possiblePaths = [
             'public/materials/' . $material->file_name,
             'materials/' . $material->file_name,
             'public/' . $material->file_name,
-            $material->file_name
+            $material->file_name,
+            'storage/app/public/materials/' . $material->file_name,
         ];
-
+        
         foreach ($possiblePaths as $path) {
             if (Storage::exists($path)) {
+                \Log::info('Found file by filename', ['path' => $path, 'material_id' => $material->id]);
                 return $path;
             }
         }
-
-        // Default to public/materials directory
-        return 'public/materials/' . $material->file_name;
     }
-
+    
+    // Log error and return default path
+    \Log::error('Could not find file for material', [
+        'material_id' => $material->id,
+        'file_path' => $material->file_path,
+        'file_name' => $material->file_name
+    ]);
+    
+    // Default to public/materials directory with the filename from file_path
+    if (!empty($material->file_path)) {
+        return 'public/materials/' . basename($material->file_path);
+    }
+    
+    return 'public/materials/' . $material->file_name;
+}
     /**
      * Helper method to get the file URL for streaming/viewing
      */
