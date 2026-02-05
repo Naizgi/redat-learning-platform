@@ -342,12 +342,10 @@ class MaterialController extends Controller
         $message = 'Material unliked successfully';
         $liked = false;
     } else {
-        // Create like without timestamps if the table doesn't have them
-        $material->likes()->create([
-            'user_id' => $user->id,
-            // Add timestamps only if they exist in the table
-            'created_at' => now(),
-            'updated_at' => now()
+        // Use raw DB query to insert without timestamps
+        DB::table('material_likes')->insert([
+            'material_id' => $material->id,
+            'user_id' => $user->id
         ]);
         $message = 'Material liked successfully';
         $liked = true;
