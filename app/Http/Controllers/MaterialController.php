@@ -330,30 +330,39 @@ class MaterialController extends Controller
         return Storage::download($storagePath, $material->file_name);
     }
 
-    public function like(Material $material)
-    {
-        $this->authorizeAccess($material);
+   public function like(Material $material)
+{
+    $this->authorizeAccess($material);
 
-        $user = auth()->user();
-        $existingLike = $material->likes()->where('user_id', $user->id)->first();
+    $user = auth()->user();
+    $existingLike = $material->likes()->where('user_id', $user->id)->first();
 
-        if ($existingLike) {
-            $existingLike->delete();
-            $message = 'Material unliked successfully';
-        } else {
-            $material->likes()->create(['user_id' => $user->id]);
-            $message = 'Material liked successfully';
-        }
-
-        $material->loadCount('likes');
-
-        return response()->json([
-            'success' => true,
-            'message' => $message,
-            'likes_count' => $material->likes_count,
-            'liked' => !$existingLike
+    if ($existingLike) {
+        $existingLike->delete();
+        $message = 'Material unliked successfully';
+        $liked = false;
+    } else {
+        // Create like without timestamps if the table doesn't have them
+        $material->likes()->create([
+            'user_id' => $user->id,
+            // Add timestamps only if they exist in the table
+            'created_at' => now(),
+            'updated_at' => now()
         ]);
+        $message = 'Material liked successfully';
+        $liked = true;
     }
+
+    // Refresh to get updated count
+    $material->loadCount('likes');
+
+    return response()->json([
+        'success' => true,
+        'message' => $message,
+        'likes_count' => $material->likes_count,
+        'liked' => $liked
+    ]);
+}
 
     public function comment(Request $request, Material $material)
     {
