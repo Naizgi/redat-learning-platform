@@ -31,6 +31,8 @@ Route::post('student/payments/submit', [PaymentController::class, 'submit']);
 
 // PUBLIC STREAMING ENDPOINT - MUST BE OUTSIDE ALL AUTH MIDDLEWARE
 Route::get('/materials/{material}/stream', [MaterialController::class, 'stream'])->name('materials.stream');
+// Add this route for video streaming
+Route::get('/video/stream/{filename}', [VideoController::class, 'stream'])->name('video.stream');
 
 /* ================= AUTH ROUTES ================= */
 Route::prefix('auth')->group(function () {
