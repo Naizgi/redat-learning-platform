@@ -4,7 +4,9 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
 class CorsMiddleware
 {
@@ -23,23 +25,32 @@ class CorsMiddleware
 
         $response = $next($request);
 
-        // Check if response is a StreamedResponse (file download/stream)
-        if ($response instanceof StreamedResponse) {
-            // For StreamedResponse, set headers directly on headers property
-            $response->headers->set('Access-Control-Allow-Origin', 'http://localhost:5173');
-            $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-            $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-            $response->headers->set('Access-Control-Allow-Credentials', 'true');
-            $response->headers->set('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length');
+        // Define CORS headers
+        $corsHeaders = [
+            'Access-Control-Allow-Origin' => 'http://localhost:5173',
+            'Access-Control-Allow-Methods' => 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers' => 'Content-Type, Authorization, X-Requested-With',
+            'Access-Control-Allow-Credentials' => 'true',
+            'Access-Control-Expose-Headers' => 'Content-Disposition, Content-Length, X-Filename',
+        ];
+
+        // Handle Symfony responses (BinaryFileResponse, StreamedResponse, etc.)
+        if ($response instanceof SymfonyResponse) {
+            foreach ($corsHeaders as $key => $value) {
+                $response->headers->set($key, $value);
+            }
             return $response;
         }
 
-        // For regular responses, use header() method
-        return $response
-            ->header('Access-Control-Allow-Origin', 'http://localhost:5173')
-            ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-            ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
-            ->header('Access-Control-Allow-Credentials', 'true')
-            ->header('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length');
+        // For regular Laravel responses (that have header() method)
+        if (method_exists($response, 'header')) {
+            foreach ($corsHeaders as $key => $value) {
+                $response = $response->header($key, $value);
+            }
+            return $response;
+        }
+
+        // Fallback for any other response type
+        return $response;
     }
 }
