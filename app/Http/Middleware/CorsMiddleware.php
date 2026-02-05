@@ -6,7 +6,6 @@ use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
-use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
 class CorsMiddleware
 {
@@ -34,23 +33,27 @@ class CorsMiddleware
             'Access-Control-Expose-Headers' => 'Content-Disposition, Content-Length, X-Filename',
         ];
 
-        // Handle Symfony responses (BinaryFileResponse, StreamedResponse, etc.)
-        if ($response instanceof SymfonyResponse) {
+        // Check for BinaryFileResponse (the missing case)
+        if ($response instanceof BinaryFileResponse) {
             foreach ($corsHeaders as $key => $value) {
                 $response->headers->set($key, $value);
             }
             return $response;
         }
 
-        // For regular Laravel responses (that have header() method)
-        if (method_exists($response, 'header')) {
+        // Check if response is a StreamedResponse (file download/stream)
+        if ($response instanceof StreamedResponse) {
             foreach ($corsHeaders as $key => $value) {
-                $response = $response->header($key, $value);
+                $response->headers->set($key, $value);
             }
             return $response;
         }
 
-        // Fallback for any other response type
+        // For regular responses, use header() method
+        foreach ($corsHeaders as $key => $value) {
+            $response = $response->header($key, $value);
+        }
+        
         return $response;
     }
 }
