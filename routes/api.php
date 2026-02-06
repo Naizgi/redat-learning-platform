@@ -28,6 +28,7 @@ Route::options('/{any}', function () {
 /* ================= PUBLIC ROUTES (NO AUTH REQUIRED) ================= */
 Route::get('departments', [DepartmentController::class, 'index']);
 Route::post('student/payments/submit', [PaymentController::class, 'submit']);
+Route::get('/materials/featured', [MaterialController::class, 'getFeatured']);
 
 // PUBLIC STREAMING ENDPOINT - MUST BE OUTSIDE ALL AUTH MIDDLEWARE
 Route::get('/materials/{material}/stream', [MaterialController::class, 'stream'])->name('materials.stream');
