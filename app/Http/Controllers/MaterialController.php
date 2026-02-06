@@ -100,54 +100,76 @@ class MaterialController extends Controller
 /**
  * Get featured materials for public/home page
  */
+/**
+ * Get featured materials for public/home page
+ */
 public function getFeatured(Request $request)
 {
     try {
         \Log::info('Featured materials requested', [
             'ip' => $request->ip(),
-            'user_agent' => $request->userAgent()
+            'user_agent' => $request->userAgent(),
+            'public_access' => true
         ]);
 
-        // Get a few materials from each department for display
-        $departments = \App\Models\Department::where('is_active', true)->get();
+        // Get all active departments (remove the is_active filter if column doesn't exist)
+        $departments = \App\Models\Department::all(); // Changed from where('is_active', true)
         
         $featuredMaterials = collect();
         
-        foreach ($departments as $department) {
-            // Get 2 materials from each department
-            $materials = Material::where('is_published', true)
-                ->where('department_id', $department->id)
-                ->with(['department'])
-                ->orderByDesc('views_count')
-                ->orderByDesc('created_at')
-                ->limit(2)
-                ->get();
-                
-            // Add file URLs
-            $materials->transform(function ($material) {
-                $material->file_url = $this->getFileUrl($material);
-                $material->download_url = $this->getDownloadUrl($material);
-                return $material;
-            });
-            
-            $featuredMaterials = $featuredMaterials->merge($materials);
-        }
-        
-        // If no materials from departments, get some general materials
-        if ($featuredMaterials->isEmpty()) {
+        // If no departments, get materials directly
+        if ($departments->isEmpty()) {
             $featuredMaterials = Material::where('is_published', true)
                 ->with(['department'])
+                ->withCount(['likes', 'comments'])
                 ->orderByDesc('views_count')
                 ->orderByDesc('created_at')
                 ->limit(8)
                 ->get();
+        } else {
+            // Get a few materials from each department for display
+            foreach ($departments as $department) {
+                // Get 2 materials from each department
+                $materials = Material::where('is_published', true)
+                    ->where('department_id', $department->id)
+                    ->with(['department'])
+                    ->withCount(['likes', 'comments'])
+                    ->orderByDesc('views_count')
+                    ->orderByDesc('created_at')
+                    ->limit(2)
+                    ->get();
+                    
+                // Add file URLs
+                $materials->transform(function ($material) {
+                    $material->file_url = $this->getFileUrl($material);
+                    $material->download_url = $this->getDownloadUrl($material);
+                    return $material;
+                });
                 
-            $featuredMaterials->transform(function ($material) {
-                $material->file_url = $this->getFileUrl($material);
-                $material->download_url = $this->getDownloadUrl($material);
-                return $material;
-            });
+                $featuredMaterials = $featuredMaterials->merge($materials);
+            }
+            
+            // If no materials from departments, get some general materials
+            if ($featuredMaterials->isEmpty()) {
+                $featuredMaterials = Material::where('is_published', true)
+                    ->with(['department'])
+                    ->withCount(['likes', 'comments'])
+                    ->orderByDesc('views_count')
+                    ->orderByDesc('created_at')
+                    ->limit(8)
+                    ->get();
+            }
         }
+        
+        // Add file URLs to materials
+        $featuredMaterials->transform(function ($material) {
+            $material->file_url = $this->getFileUrl($material);
+            $material->download_url = $this->getDownloadUrl($material);
+            return $material;
+        });
+        
+        // Limit to 8 materials total for the featured section
+        $featuredMaterials = $featuredMaterials->take(8);
         
         return response()->json([
             'success' => true,
@@ -169,7 +191,6 @@ public function getFeatured(Request $request)
         ], 500);
     }
 }
-
 
 
 
