@@ -6,223 +6,66 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Department;
 use Illuminate\Validation\Rule;
-use App\Models\Material;
-use App\Models\User;
-use Illuminate\Support\Facades\DB;
 
 class DepartmentController extends Controller
 {
-    // List all departments with statistics
+    // List all departments - SIMPLIFIED VERSION
     public function index()
     {
         try {
-            // Get all active departments
+            // Simple query to get departments
             $departments = Department::where('is_active', true)
                 ->orderBy('order')
-                ->get();
+                ->get(['id', 'name', 'description', 'slug', 'color', 'order', 'is_active', 'created_at', 'updated_at']);
             
-            // Get all statistics in efficient queries
-            $materialsStats = Material::select('department_id', DB::raw('COUNT(*) as total'))
-                ->groupBy('department_id')
-                ->pluck('total', 'department_id')
-                ->toArray();
-            
-            $usersStats = User::select('department_id', DB::raw('COUNT(*) as total'))
-                ->groupBy('department_id')
-                ->pluck('total', 'department_id')
-                ->toArray();
-            
-            // Get video counts for all departments in one query
-            $videoStats = Material::where('type', 'video')
-                ->orWhere(function($query) {
-                    $query->where('file_name', 'like', '%.mp4')
-                        ->orWhere('file_name', 'like', '%.avi')
-                        ->orWhere('file_name', 'like', '%.mov')
-                        ->orWhere('file_name', 'like', '%.wmv')
-                        ->orWhere('file_name', 'like', '%.flv')
-                        ->orWhere('file_name', 'like', '%.mkv')
-                        ->orWhere('file_name', 'like', '%.webm')
-                        ->orWhere('file_name', 'like', '%.m4v');
-                })
-                ->select('department_id', DB::raw('COUNT(*) as total'))
-                ->groupBy('department_id')
-                ->pluck('total', 'department_id')
-                ->toArray();
-            
-            // Transform departments to include statistics
-            $departmentsWithStats = $departments->map(function ($department) use ($materialsStats, $usersStats, $videoStats) {
-                // Get statistics for this department
-                $materialsCount = $materialsStats[$department->id] ?? 0;
-                $usersCount = $usersStats[$department->id] ?? 0;
-                $videosCount = $videoStats[$department->id] ?? 0;
-                
-                return [
-                    'id' => $department->id,
-                    'name' => $department->name,
-                    'description' => $department->description,
-                    'slug' => $department->slug,
-                    'is_active' => $department->is_active,
-                    'order' => $department->order ?? 0,
-                    'color' => $department->color ?? 'blue',
-                    'created_at' => $department->created_at,
-                    'updated_at' => $department->updated_at,
-                    // Statistics
-                    'materials_count' => $materialsCount,
-                    'videos_count' => $videosCount,
-                    'users_count' => $usersCount,
-                    // For backward compatibility
-                    'total_materials' => $materialsCount,
-                    'total_videos' => $videosCount,
-                    'total_users' => $usersCount,
-                    // For frontend
-                    'stats' => [
-                        'materials' => $materialsCount,
-                        'videos' => $videosCount,
-                        'users' => $usersCount,
-                        'updated_at' => $department->updated_at
-                    ]
-                ];
-            });
-            
-            // Calculate totals
-            $totalDepartments = $departments->count();
-            $totalMaterials = array_sum($materialsStats);
-            $totalVideos = array_sum($videoStats);
-            $totalUsers = array_sum($usersStats);
-            
+            // Return simple response without statistics first
             return response()->json([
                 'success' => true,
                 'message' => 'Departments fetched successfully',
-                'departments' => $departmentsWithStats,
+                'departments' => $departments,
                 'statistics' => [
-                    'total_departments' => $totalDepartments,
-                    'total_materials' => $totalMaterials,
-                    'total_videos' => $totalVideos,
-                    'total_users' => $totalUsers
+                    'total_departments' => $departments->count(),
+                    'total_materials' => 0,
+                    'total_videos' => 0,
+                    'total_users' => 0
                 ],
                 'meta' => [
-                    'count' => $totalDepartments,
+                    'count' => $departments->count(),
                     'timestamp' => now()->toISOString()
                 ]
             ]);
             
         } catch (\Exception $e) {
-            \Log::error('DepartmentController index error: ' . $e->getMessage(), [
+            \Log::error('DepartmentController simple index error: ' . $e->getMessage(), [
                 'exception' => $e,
                 'trace' => $e->getTraceAsString()
             ]);
             
-            // Fallback: return basic departments without statistics
-            try {
-                $departments = Department::where('is_active', true)
-                    ->orderBy('order')
-                    ->get(['id', 'name', 'description', 'slug', 'color', 'order', 'is_active', 'created_at', 'updated_at']);
-                
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Departments fetched (statistics unavailable)',
-                    'departments' => $departments,
-                    'statistics' => [
-                        'total_departments' => $departments->count(),
-                        'total_materials' => 0,
-                        'total_videos' => 0,
-                        'total_users' => 0
-                    ],
-                    'warning' => 'Statistics temporarily unavailable',
-                    'meta' => [
-                        'count' => $departments->count(),
-                        'timestamp' => now()->toISOString()
-                    ]
-                ]);
-            } catch (\Exception $fallbackError) {
-                \Log::error('DepartmentController fallback error: ' . $fallbackError->getMessage());
-                
-                return response()->json([
-                    'success' => false,
-                    'error' => 'Unable to fetch departments',
-                    'message' => 'Please try again later',
-                    'departments' => [],
-                    'statistics' => [
-                        'total_departments' => 0,
-                        'total_materials' => 0,
-                        'total_videos' => 0,
-                        'total_users' => 0
-                    ],
-                    'meta' => [
-                        'count' => 0,
-                        'timestamp' => now()->toISOString()
-                    ]
-                ], 200); // Return 200 with empty data instead of 500
-            }
+            return response()->json([
+                'success' => false,
+                'error' => 'Unable to fetch departments',
+                'message' => $e->getMessage(),
+                'departments' => [],
+                'statistics' => [
+                    'total_departments' => 0,
+                    'total_materials' => 0,
+                    'total_videos' => 0,
+                    'total_users' => 0
+                ]
+            ], 500); // Return 500 for server errors
         }
     }
 
-    // Show a single department with detailed statistics
+    // Show a single department
     public function show($id)
     {
         try {
             $department = Department::findOrFail($id);
             
-            // Get statistics
-            $materialsCount = Material::where('department_id', $department->id)->count();
-            $usersCount = User::where('department_id', $department->id)->count();
-            
-            // Get video count using type column or file extensions
-            $videosCount = Material::where('department_id', $department->id)
-                ->where(function($query) {
-                    $query->where('type', 'video')
-                        ->orWhere('file_name', 'like', '%.mp4')
-                        ->orWhere('file_name', 'like', '%.avi')
-                        ->orWhere('file_name', 'like', '%.mov')
-                        ->orWhere('file_name', 'like', '%.wmv')
-                        ->orWhere('file_name', 'like', '%.flv')
-                        ->orWhere('file_name', 'like', '%.mkv');
-                })->count();
-            
-            // Get latest materials
-            $latestMaterials = Material::where('department_id', $department->id)
-                ->orderBy('created_at', 'desc')
-                ->limit(5)
-                ->get(['id', 'title', 'type', 'file_name', 'created_at']);
-            
-            // Get active users
-            $activeUsers = User::where('department_id', $department->id)
-                ->where('is_active', true)
-                ->count();
-            
             return response()->json([
                 'success' => true,
                 'message' => 'Department details fetched successfully',
-                'department' => [
-                    'id' => $department->id,
-                    'name' => $department->name,
-                    'description' => $department->description,
-                    'slug' => $department->slug,
-                    'is_active' => $department->is_active,
-                    'order' => $department->order ?? 0,
-                    'color' => $department->color ?? 'blue',
-                    'created_at' => $department->created_at,
-                    'updated_at' => $department->updated_at,
-                    // Statistics
-                    'materials_count' => $materialsCount,
-                    'videos_count' => $videosCount,
-                    'users_count' => $usersCount,
-                    'active_users_count' => $activeUsers,
-                    // Additional data
-                    'latest_materials' => $latestMaterials,
-                    // For backward compatibility
-                    'total_materials' => $materialsCount,
-                    'total_videos' => $videosCount,
-                    'total_users' => $usersCount,
-                    // For frontend
-                    'stats' => [
-                        'materials' => $materialsCount,
-                        'videos' => $videosCount,
-                        'users' => $usersCount,
-                        'active_users' => $activeUsers,
-                        'updated_at' => $department->updated_at
-                    ]
-                ]
+                'department' => $department
             ]);
             
         } catch (\Exception $e) {
@@ -231,7 +74,7 @@ class DepartmentController extends Controller
             return response()->json([
                 'success' => false,
                 'error' => 'Department not found',
-                'message' => 'The requested department does not exist'
+                'message' => $e->getMessage()
             ], 404);
         }
     }
@@ -321,18 +164,6 @@ class DepartmentController extends Controller
     public function destroy(Department $department)
     {
         try {
-            // Check if department has materials or users
-            $materialsCount = Material::where('department_id', $department->id)->count();
-            $usersCount = User::where('department_id', $department->id)->count();
-            
-            if ($materialsCount > 0 || $usersCount > 0) {
-                return response()->json([
-                    'success' => false,
-                    'error' => 'Cannot delete department',
-                    'message' => 'Department has ' . $materialsCount . ' materials and ' . $usersCount . ' users. Remove them first.'
-                ], 422);
-            }
-            
             $department->delete();
             
             return response()->json([
