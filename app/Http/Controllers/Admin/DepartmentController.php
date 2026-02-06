@@ -8,7 +8,6 @@ use App\Models\Department;
 use Illuminate\Validation\Rule;
 use App\Models\Material; // Add Material model
 use App\Models\User; // Add User model
-use App\Models\Course; // Add Course model
 
 class DepartmentController extends Controller
 {
@@ -31,7 +30,6 @@ class DepartmentController extends Controller
                         ->orWhere('file_name', 'like', '%.mov')
                         ->orWhere('file_name', 'like', '%.wmv');
                 })->count();
-            $coursesCount = Course::where('department_id', $department->id)->count();
             $usersCount = User::where('department_id', $department->id)->count();
             
             return [
@@ -47,18 +45,15 @@ class DepartmentController extends Controller
                 // Statistics
                 'materials_count' => $materialsCount,
                 'videos_count' => $videosCount,
-                'courses_count' => $coursesCount,
                 'users_count' => $usersCount,
                 // For backward compatibility
                 'total_materials' => $materialsCount,
                 'total_videos' => $videosCount,
-                'total_courses' => $coursesCount,
                 'total_users' => $usersCount,
                 // For frontend component
                 'stats' => [
                     'materials' => $materialsCount,
                     'videos' => $videosCount,
-                    'courses' => $coursesCount,
                     'users' => $usersCount,
                     'updated_at' => $department->updated_at
                 ]
@@ -71,7 +66,6 @@ class DepartmentController extends Controller
                 'total_departments' => $departments->count(),
                 'total_materials' => $departmentsWithStats->sum('materials_count'),
                 'total_videos' => $departmentsWithStats->sum('videos_count'),
-                'total_courses' => $departmentsWithStats->sum('courses_count'),
                 'total_users' => $departmentsWithStats->sum('users_count')
             ]
         ]);
@@ -91,7 +85,6 @@ class DepartmentController extends Controller
                     ->orWhere('file_name', 'like', '%.mov')
                     ->orWhere('file_name', 'like', '%.wmv');
             })->count();
-        $coursesCount = Course::where('department_id', $department->id)->count();
         $usersCount = User::where('department_id', $department->id)->count();
         
         // Get latest materials
@@ -118,7 +111,6 @@ class DepartmentController extends Controller
             // Statistics
             'materials_count' => $materialsCount,
             'videos_count' => $videosCount,
-            'courses_count' => $coursesCount,
             'users_count' => $usersCount,
             'active_users_count' => $activeUsers,
             // Additional data
@@ -126,13 +118,11 @@ class DepartmentController extends Controller
             // For backward compatibility
             'total_materials' => $materialsCount,
             'total_videos' => $videosCount,
-            'total_courses' => $coursesCount,
             'total_users' => $usersCount,
             // For frontend component
             'stats' => [
                 'materials' => $materialsCount,
                 'videos' => $videosCount,
-                'courses' => $coursesCount,
                 'users' => $usersCount,
                 'active_users' => $activeUsers,
                 'updated_at' => $department->updated_at
