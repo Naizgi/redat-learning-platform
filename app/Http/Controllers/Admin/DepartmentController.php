@@ -9,14 +9,13 @@ use Illuminate\Validation\Rule;
 
 class DepartmentController extends Controller
 {
-    // List all departments - SIMPLIFIED VERSION
+    // List all departments - FIXED VERSION
     public function index()
     {
         try {
-            // Simple query to get departments
-            $departments = Department::where('is_active', true)
-                ->orderBy('order')
-                ->get(['id', 'name', 'description', 'slug', 'color', 'order', 'is_active', 'created_at', 'updated_at']);
+            // Simple query to get departments - DON'T query is_active if it doesn't exist
+            $departments = Department::orderBy('order')
+                ->get(['id', 'name', 'description', 'slug', 'color', 'order', 'created_at', 'updated_at']);
             
             // Return simple response without statistics first
             return response()->json([
@@ -36,7 +35,7 @@ class DepartmentController extends Controller
             ]);
             
         } catch (\Exception $e) {
-            \Log::error('DepartmentController simple index error: ' . $e->getMessage(), [
+            \Log::error('DepartmentController index error: ' . $e->getMessage(), [
                 'exception' => $e,
                 'trace' => $e->getTraceAsString()
             ]);
@@ -88,7 +87,6 @@ class DepartmentController extends Controller
                 'description' => 'nullable|string',
                 'color' => 'nullable|string|max:50',
                 'order' => 'nullable|integer|min:0',
-                'is_active' => 'nullable|boolean',
             ]);
 
             $department = Department::create([
@@ -96,7 +94,6 @@ class DepartmentController extends Controller
                 'description' => $request->description,
                 'color' => $request->color ?? 'blue',
                 'order' => $request->order ?? 0,
-                'is_active' => $request->is_active ?? true,
                 'slug' => \Str::slug($request->name),
             ]);
 
@@ -131,7 +128,6 @@ class DepartmentController extends Controller
                 'description' => 'nullable|string',
                 'color' => 'nullable|string|max:50',
                 'order' => 'nullable|integer|min:0',
-                'is_active' => 'nullable|boolean',
             ]);
 
             $department->update([
@@ -139,7 +135,6 @@ class DepartmentController extends Controller
                 'description' => $request->description,
                 'color' => $request->color ?? $department->color,
                 'order' => $request->order ?? $department->order,
-                'is_active' => $request->is_active ?? $department->is_active,
                 'slug' => $request->name !== $department->name ? \Str::slug($request->name) : $department->slug,
             ]);
 
