@@ -96,6 +96,84 @@ class MaterialController extends Controller
         }
     }
 
+
+/**
+ * Get featured materials for public/home page
+ */
+public function getFeatured(Request $request)
+{
+    try {
+        \Log::info('Featured materials requested', [
+            'ip' => $request->ip(),
+            'user_agent' => $request->userAgent()
+        ]);
+
+        // Get a few materials from each department for display
+        $departments = \App\Models\Department::where('is_active', true)->get();
+        
+        $featuredMaterials = collect();
+        
+        foreach ($departments as $department) {
+            // Get 2 materials from each department
+            $materials = Material::where('is_published', true)
+                ->where('department_id', $department->id)
+                ->with(['department'])
+                ->orderByDesc('views_count')
+                ->orderByDesc('created_at')
+                ->limit(2)
+                ->get();
+                
+            // Add file URLs
+            $materials->transform(function ($material) {
+                $material->file_url = $this->getFileUrl($material);
+                $material->download_url = $this->getDownloadUrl($material);
+                return $material;
+            });
+            
+            $featuredMaterials = $featuredMaterials->merge($materials);
+        }
+        
+        // If no materials from departments, get some general materials
+        if ($featuredMaterials->isEmpty()) {
+            $featuredMaterials = Material::where('is_published', true)
+                ->with(['department'])
+                ->orderByDesc('views_count')
+                ->orderByDesc('created_at')
+                ->limit(8)
+                ->get();
+                
+            $featuredMaterials->transform(function ($material) {
+                $material->file_url = $this->getFileUrl($material);
+                $material->download_url = $this->getDownloadUrl($material);
+                return $material;
+            });
+        }
+        
+        return response()->json([
+            'success' => true,
+            'data' => $featuredMaterials,
+            'count' => $featuredMaterials->count(),
+            'message' => 'Featured materials retrieved successfully'
+        ]);
+        
+    } catch (\Throwable $e) {
+        \Log::error('Featured materials error', [
+            'message' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'Error retrieving featured materials',
+            'error' => env('APP_DEBUG') ? $e->getMessage() : null
+        ], 500);
+    }
+}
+
+
+
+
+
     public function show(Material $material)
     {
         $this->authorizeAccess($material);
