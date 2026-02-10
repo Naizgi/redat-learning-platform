@@ -29,7 +29,8 @@ class DepartmentController extends Controller
                 // Get materials count for this department
                 $materialsCount = Material::where('department_id', $department->id)
                 ->where(function($q) {
-                                $q->where('file_name', 'like', '%.pdf')
+                                $q->where('type', 'document')
+                                    ->where('file_name', 'like', '%.pdf')
                                     ->orWhere('file_name', 'like', '%.doc')
                                     ->orWhere('file_name', 'like', '%.docx')
                                     ->orWhere('file_name', 'like', '%.txt')
