@@ -193,6 +193,12 @@ class AdminUserController extends Controller
                 'role' => $validated['role']
             ]);
 
+            // Validate and set subscription duration
+            $subscriptionDuration = $validated['subscription_duration'] ?? 365; // Default 365 days (1 year)
+            if ($subscriptionDuration < 1) {
+                $subscriptionDuration = 365; // Ensure minimum 1 year
+            }
+
             // Use transaction to ensure data consistency
             DB::beginTransaction();
 
@@ -223,26 +229,61 @@ class AdminUserController extends Controller
             ]);
 
             // Create active subscription for the user
-            $subscriptionDuration = $validated['subscription_duration'] ?? 30; // Default 30 days
+            $subscriptionStartDate = now();
             $subscriptionEndDate = now()->addDays($subscriptionDuration);
 
-            $subscription = Subscription::create([
-                'user_id' => $user->id,
-                'plan_id' => null, // Or you can set a default plan
-                'status' => 'active',
-                'start_date' => now(),
-                'end_date' => $subscriptionEndDate,
-                'auto_renew' => false,
-                'created_by_admin' => true,
-                'admin_id' => auth()->id(),
-                'notes' => 'Initial subscription created by admin'
+            Log::info('Creating subscription with dates:', [
+                'start_date' => $subscriptionStartDate->format('Y-m-d H:i:s'),
+                'end_date' => $subscriptionEndDate->format('Y-m-d H:i:s'),
+                'duration' => $subscriptionDuration . ' days'
             ]);
 
-            Log::info('Subscription created for user', [
-                'user_id' => $user->id,
-                'subscription_id' => $subscription->id,
-                'end_date' => $subscriptionEndDate->format('Y-m-d H:i:s')
-            ]);
+            try {
+                $subscription = Subscription::create([
+                    'user_id' => $user->id,
+                    'plan_id' => null, // Or you can set a default plan
+                    'status' => 'active',
+                    'start_date' => $subscriptionStartDate,
+                    'end_date' => $subscriptionEndDate,
+                    'expires_at' => $subscriptionEndDate, // Also set expires_at for backward compatibility
+                    'auto_renew' => false,
+                    'created_by_admin' => true,
+                    'admin_id' => auth()->id(),
+                    'notes' => 'Initial subscription created by admin',
+                    'amount' => 0.00, // Default amount for free/admin-created subscriptions
+                ]);
+
+                Log::info('Subscription created successfully', [
+                    'user_id' => $user->id,
+                    'subscription_id' => $subscription->id,
+                    'start_date' => $subscription->start_date,
+                    'end_date' => $subscription->end_date,
+                    'expires_at' => $subscription->expires_at
+                ]);
+
+            } catch (\Exception $e) {
+                Log::error('Failed to create subscription', [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                    'data' => [
+                        'user_id' => $user->id,
+                        'start_date' => $subscriptionStartDate->format('Y-m-d H:i:s'),
+                        'end_date' => $subscriptionEndDate->format('Y-m-d H:i:s')
+                    ]
+                ]);
+                
+                // Still commit the user but note the subscription failure
+                DB::commit();
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'User created successfully but subscription creation failed',
+                    'data' => [
+                        'user' => $user->load(['department']),
+                        'subscription_error' => $e->getMessage()
+                    ]
+                ], 201);
+            }
 
             // Send credentials email if requested
             $sendCredentials = $validated['send_credentials'] ?? true;
@@ -308,6 +349,7 @@ class AdminUserController extends Controller
             if (app()->environment('local', 'staging')) {
                 $response['debug'] = [
                     'plain_password' => $plainPassword,
+                    'subscription_start' => $subscriptionStartDate->format('Y-m-d H:i:s'),
                     'subscription_end' => $subscriptionEndDate->format('Y-m-d H:i:s')
                 ];
             }
@@ -475,16 +517,19 @@ class AdminUserController extends Controller
                 
                 if (!$subscription) {
                     // Create new subscription if doesn't exist
+                    $subscriptionDuration = $validated['subscription_duration'] ?? 365;
                     $subscription = Subscription::create([
                         'user_id' => $user->id,
                         'plan_id' => null,
                         'status' => 'active',
                         'start_date' => now(),
-                        'end_date' => now()->addDays($validated['subscription_duration'] ?? 30),
+                        'end_date' => now()->addDays($subscriptionDuration),
+                        'expires_at' => now()->addDays($subscriptionDuration),
                         'auto_renew' => false,
                         'created_by_admin' => true,
                         'admin_id' => auth()->id(),
-                        'notes' => 'Subscription created/updated by admin'
+                        'notes' => 'Subscription created/updated by admin',
+                        'amount' => 0.00,
                     ]);
                 } else {
                     // Update existing subscription
@@ -493,7 +538,9 @@ class AdminUserController extends Controller
                     }
                     
                     if (isset($validated['subscription_duration'])) {
-                        $subscription->end_date = now()->addDays($validated['subscription_duration']);
+                        $newEndDate = now()->addDays($validated['subscription_duration']);
+                        $subscription->end_date = $newEndDate;
+                        $subscription->expires_at = $newEndDate;
                     }
                     
                     $subscription->status = 'active';
@@ -507,7 +554,9 @@ class AdminUserController extends Controller
                 Log::info('Subscription updated', [
                     'user_id' => $user->id,
                     'subscription_id' => $subscription->id,
-                    'end_date' => $subscription->end_date->format('Y-m-d H:i:s')
+                    'start_date' => $subscription->start_date,
+                    'end_date' => $subscription->end_date->format('Y-m-d H:i:s'),
+                    'expires_at' => $subscription->expires_at->format('Y-m-d H:i:s')
                 ]);
             }
 
