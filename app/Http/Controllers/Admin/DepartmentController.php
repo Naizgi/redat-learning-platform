@@ -27,7 +27,17 @@ class DepartmentController extends Controller
             
             foreach ($departments as $department) {
                 // Get materials count for this department
-                $materialsCount = Material::where('department_id', $department->id)->count();
+                $materialsCount = Material::where('department_id', $department->id)
+                ->where(function($q) {
+                                $q->where('file_name', 'like', '%.pdf')
+                                    ->orWhere('file_name', 'like', '%.doc')
+                                    ->orWhere('file_name', 'like', '%.docx')
+                                    ->orWhere('file_name', 'like', '%.txt')
+                                    ->orWhere('file_name', 'like', '%.ppt')
+                                    ->orWhere('file_name', 'like', '%.pptx')
+                                    ->orWhere('file_name', 'like', '%.xls')
+                                    ->orWhere('file_name', 'like', '%.xlsx');
+                            })->count();
                 
                 // Get videos count for this department - UPDATED TO INCLUDE YOUTUBE TYPE
                 $videosCount = Material::where('department_id', $department->id)
