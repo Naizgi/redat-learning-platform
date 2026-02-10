@@ -28,8 +28,8 @@ class DepartmentController extends Controller
             foreach ($departments as $department) {
                 // Get materials count for this department
                 $materialsCount = Material::where('department_id', $department->id)
-                ->where(function($q) {
-                                $q->where('type', 'document')
+                ->where(function($query) {
+                                $query->where('type', 'document')
                                     ->where('file_name', 'like', '%.pdf')
                                     ->orWhere('file_name', 'like', '%.doc')
                                     ->orWhere('file_name', 'like', '%.docx')
