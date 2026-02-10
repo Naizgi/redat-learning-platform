@@ -29,10 +29,11 @@ class DepartmentController extends Controller
                 // Get materials count for this department
                 $materialsCount = Material::where('department_id', $department->id)->count();
                 
-                // Get videos count for this department
+                // Get videos count for this department - UPDATED TO INCLUDE YOUTUBE TYPE
                 $videosCount = Material::where('department_id', $department->id)
                     ->where(function($query) {
                         $query->where('type', 'video')
+                            ->orWhere('type', 'youtube')  // ADD THIS LINE
                             ->orWhere('file_name', 'like', '%.mp4')
                             ->orWhere('file_name', 'like', '%.avi')
                             ->orWhere('file_name', 'like', '%.mov')
@@ -133,10 +134,11 @@ class DepartmentController extends Controller
             $materialsCount = Material::where('department_id', $department->id)->count();
             $usersCount = User::where('department_id', $department->id)->count();
             
-            // Get videos count
+            // Get videos count - UPDATED TO INCLUDE YOUTUBE TYPE
             $videosCount = Material::where('department_id', $department->id)
                 ->where(function($query) {
                     $query->where('type', 'video')
+                        ->orWhere('type', 'youtube')  // ADD THIS LINE
                         ->orWhere('file_name', 'like', '%.mp4')
                         ->orWhere('file_name', 'like', '%.avi')
                         ->orWhere('file_name', 'like', '%.mov')
