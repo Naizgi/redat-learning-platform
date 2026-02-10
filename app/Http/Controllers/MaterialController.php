@@ -139,10 +139,11 @@ public function getFeatured(Request $request)
                     ->limit(2)
                     ->get();
                     
-                // Add file URLs
+                // Add file URLs and detect type
                 $materials->transform(function ($material) {
                     $material->file_url = $this->getFileUrl($material);
                     $material->download_url = $this->getDownloadUrl($material);
+                    $material->type = $this->detectMaterialType($material);
                     return $material;
                 });
                 
@@ -161,10 +162,16 @@ public function getFeatured(Request $request)
             }
         }
         
-        // Add file URLs to materials
+        // Add file URLs and detect type for all materials
         $featuredMaterials->transform(function ($material) {
             $material->file_url = $this->getFileUrl($material);
             $material->download_url = $this->getDownloadUrl($material);
+            
+            // Only set type if not already set
+            if (!isset($material->type)) {
+                $material->type = $this->detectMaterialType($material);
+            }
+            
             return $material;
         });
         
@@ -192,6 +199,48 @@ public function getFeatured(Request $request)
     }
 }
 
+/**
+ * Detect the material type based on file name or URL
+ */
+private function detectMaterialType($material)
+{
+    $fileName = $material->file_name ?? '';
+    $fileUrl = $material->file_url ?? $material->download_url ?? '';
+    $url = !empty($fileName) ? $fileName : $fileUrl;
+    
+    // Check for YouTube URLs
+    $youtubePatterns = [
+        '/youtube\.com\/watch\?v=/i',
+        '/youtu\.be\//i',
+        '/youtube\.com\/embed\//i',
+        '/youtube\.com\/v\//i'
+    ];
+    
+    foreach ($youtubePatterns as $pattern) {
+        if (preg_match($pattern, $url)) {
+            return 'video';
+        }
+    }
+    
+    // Check for video file extensions
+    $videoExtensions = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm', 'm4v', 'mpg', 'mpeg', '3gp'];
+    foreach ($videoExtensions as $extension) {
+        if (stripos($url, '.' . $extension) !== false) {
+            return 'video';
+        }
+    }
+    
+    // Check for document/presentation extensions
+    $documentExtensions = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'txt'];
+    foreach ($documentExtensions as $extension) {
+        if (stripos($url, '.' . $extension) !== false) {
+            return 'document';
+        }
+    }
+    
+    // Default to 'material' if cannot determine
+    return 'material';
+}
 
 
 
