@@ -59,16 +59,26 @@ class PaymentApprovalController extends Controller
             $startDate = now();
             $endDate = now()->addYear(); // 1 year subscription
             
-            // Create or update subscription with exact dates
+            // Create or update subscription with all required fields
+            $subscriptionData = [
+                'user_id' => $payment->user_id,
+                'plan_id' => null,
+                'status' => 'active',
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'expires_at' => $endDate, // Also set expires_at for backward compatibility
+                'auto_renew' => false,
+                'created_by_admin' => true,
+                'admin_id' => $request->user()->id,
+                'notes' => 'Subscription activated via payment approval',
+                'amount' => $payment->amount,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+
             $subscription = Subscription::updateOrCreate(
                 ['user_id' => $payment->user_id],
-                [
-                    'start_date' => $startDate,
-                    'end_date' => $endDate,
-                    'status' => 'active',
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]
+                $subscriptionData
             );
 
             // Update user status
@@ -87,6 +97,7 @@ class PaymentApprovalController extends Controller
                     'user_id' => $payment->user_id,
                     'subscription_start' => $subscription->start_date,
                     'subscription_end' => $subscription->end_date,
+                    'expires_at' => $subscription->expires_at,
                     'email_sent' => $emailSent,
                 ]
             ]);
@@ -341,6 +352,251 @@ class PaymentApprovalController extends Controller
                 'success' => false,
                 'message' => 'Payment email test failed',
                 'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get payment statistics
+     */
+    public function getPaymentStats()
+    {
+        try {
+            $totalPayments = Payment::count();
+            $pendingPayments = Payment::where('status', 'pending')->count();
+            $approvedPayments = Payment::where('status', 'approved')->count();
+            $deniedPayments = Payment::where('status', 'denied')->count();
+            
+            $totalAmount = Payment::where('status', 'approved')->sum('amount');
+            
+            return response()->json([
+                'success' => true,
+                'stats' => [
+                    'total_payments' => $totalPayments,
+                    'pending_payments' => $pendingPayments,
+                    'approved_payments' => $approvedPayments,
+                    'denied_payments' => $deniedPayments,
+                    'total_amount' => number_format($totalAmount, 2),
+                    'currency' => 'ETB'
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to get payment statistics: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load payment statistics',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    /**
+     * Get payment details by ID
+     */
+    public function getPaymentDetails($id)
+    {
+        try {
+            $payment = Payment::with(['user:id,name,email,phone,created_at', 'subscription'])
+                ->findOrFail($id);
+
+            return response()->json([
+                'success' => true,
+                'payment' => $payment
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to get payment details: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Payment not found',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 404);
+        }
+    }
+
+    /**
+     * Bulk payment approvals
+     */
+    public function bulkApprove(Request $request)
+    {
+        $validator = \Validator::make($request->all(), [
+            'payment_ids' => 'required|array',
+            'payment_ids.*' => 'exists:payments,id'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors(),
+                'message' => 'Validation failed'
+            ], 422);
+        }
+
+        $paymentIds = $request->payment_ids;
+        $results = [
+            'success' => 0,
+            'failed' => 0,
+            'details' => []
+        ];
+
+        DB::beginTransaction();
+
+        try {
+            foreach ($paymentIds as $paymentId) {
+                try {
+                    $payment = Payment::with('user')->find($paymentId);
+                    
+                    if (!$payment) {
+                        $results['failed']++;
+                        $results['details'][] = [
+                            'payment_id' => $paymentId,
+                            'status' => 'failed',
+                            'reason' => 'Payment not found'
+                        ];
+                        continue;
+                    }
+
+                    // Skip if already approved
+                    if ($payment->status === 'approved') {
+                        $results['details'][] = [
+                            'payment_id' => $paymentId,
+                            'status' => 'skipped',
+                            'reason' => 'Already approved'
+                        ];
+                        continue;
+                    }
+
+                    // Update payment
+                    $payment->update([
+                        'status' => 'approved',
+                        'approved_by' => $request->user()->id,
+                        'approved_at' => now(),
+                    ]);
+
+                    // Create or update subscription
+                    $startDate = now();
+                    $endDate = now()->addYear();
+                    
+                    $subscriptionData = [
+                        'user_id' => $payment->user_id,
+                        'plan_id' => null,
+                        'status' => 'active',
+                        'start_date' => $startDate,
+                        'end_date' => $endDate,
+                        'expires_at' => $endDate,
+                        'auto_renew' => false,
+                        'created_by_admin' => true,
+                        'admin_id' => $request->user()->id,
+                        'notes' => 'Bulk approval via payment',
+                        'amount' => $payment->amount,
+                    ];
+
+                    Subscription::updateOrCreate(
+                        ['user_id' => $payment->user_id],
+                        $subscriptionData
+                    );
+
+                    // Update user status
+                    $payment->user->update(['is_active' => true]);
+
+                    $results['success']++;
+                    $results['details'][] = [
+                        'payment_id' => $paymentId,
+                        'status' => 'success',
+                        'user_id' => $payment->user_id
+                    ];
+
+                } catch (\Exception $e) {
+                    $results['failed']++;
+                    $results['details'][] = [
+                        'payment_id' => $paymentId,
+                        'status' => 'failed',
+                        'reason' => $e->getMessage()
+                    ];
+                }
+            }
+
+            DB::commit();
+
+            Log::info('Bulk payment approval completed', [
+                'admin_id' => $request->user()->id,
+                'total' => count($paymentIds),
+                'success' => $results['success'],
+                'failed' => $results['failed']
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Bulk approval completed. Success: {$results['success']}, Failed: {$results['failed']}",
+                'data' => $results
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Bulk payment approval failed: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Bulk approval failed',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    /**
+     * Search payments
+     */
+    public function searchPayments(Request $request)
+    {
+        try {
+            $query = Payment::with('user:id,name,email');
+            
+            if ($request->has('search')) {
+                $search = $request->search;
+                $query->where(function($q) use ($search) {
+                    $q->where('reference', 'like', "%{$search}%")
+                      ->orWhere('method', 'like', "%{$search}%")
+                      ->orWhere('status', 'like', "%{$search}%")
+                      ->orWhereHas('user', function($userQuery) use ($search) {
+                          $userQuery->where('name', 'like', "%{$search}%")
+                                    ->orWhere('email', 'like', "%{$search}%");
+                      });
+                });
+            }
+            
+            if ($request->has('status')) {
+                $query->where('status', $request->status);
+            }
+            
+            if ($request->has('method')) {
+                $query->where('method', $request->method);
+            }
+            
+            if ($request->has('date_from')) {
+                $query->whereDate('created_at', '>=', $request->date_from);
+            }
+            
+            if ($request->has('date_to')) {
+                $query->whereDate('created_at', '<=', $request->date_to);
+            }
+            
+            $payments = $query->orderBy('created_at', 'desc')
+                             ->paginate($request->per_page ?? 20);
+
+            return response()->json([
+                'success' => true,
+                'payments' => $payments,
+                'message' => 'Payments retrieved successfully'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Payment search failed: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to search payments',
+                'error' => config('app.debug') ? $e->getMessage() : null
             ], 500);
         }
     }
