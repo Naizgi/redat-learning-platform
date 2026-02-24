@@ -107,8 +107,6 @@ class User extends Authenticatable
     }
 
     // Accessors
-
-
     public function getPreferencesAttribute($value)
     {
         $defaultPreferences = [
@@ -122,6 +120,16 @@ class User extends Authenticatable
         }
 
         return array_merge($defaultPreferences, is_array($value) ? $value : json_decode($value, true));
+    }
+
+    /**
+     * Get the avatar URL attribute.
+     *
+     * @return string|null
+     */
+    public function getAvatarUrlAttribute()
+    {
+        return $this->avatar ? asset('storage/' . $this->avatar) : null;
     }
 
     public function getFileUrlAttribute()
