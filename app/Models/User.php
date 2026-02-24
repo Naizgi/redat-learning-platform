@@ -107,10 +107,7 @@ class User extends Authenticatable
     }
 
     // Accessors
-    public function getAvatarUrlAttribute()
-    {
-        return $this->avatar ? asset('storage/' . $this->avatar) : null;
-    }
+
 
     public function getPreferencesAttribute($value)
     {
