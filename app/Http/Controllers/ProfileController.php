@@ -194,52 +194,90 @@ class ProfileController extends Controller
     /**
      * Upload user avatar
      */
-    public function uploadAvatar(Request $request)
-    {
-        try {
-            $user = $request->user();
-            
-            $validator = Validator::make($request->all(), [
-                'avatar' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048',
-            ]);
-
-            if ($validator->fails()) {
-                return response()->json([
-                    'success' => false,
-                    'errors' => $validator->errors(),
-                    'message' => 'Validation failed'
-                ], 422);
-            }
-
-            // Delete old avatar if exists
-            if ($user->avatar && Storage::disk('public')->exists($user->avatar)) {
-                Storage::disk('public')->delete($user->avatar);
-            }
-
-            $path = $request->file('avatar')->store('avatars', 'public');
-            
-            $user->avatar = $path;
-            $user->save();
-
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'avatar_url' => asset('storage/' . $path),
-                ],
-                'message' => 'Avatar uploaded successfully'
-            ], 200);
-
-        } catch (\Exception $e) {
-            Log::error('Error uploading avatar: ' . $e->getMessage());
-            
+    /**
+ * Upload user avatar
+ */
+public function uploadAvatar(Request $request)
+{
+    try {
+        $user = $request->user();
+        
+        if (!$user) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to upload avatar',
-                'error' => $e->getMessage()
-            ], 500);
+                'message' => 'User not authenticated'
+            ], 401);
         }
-    }
 
+        // Log request details
+        \Log::info('Avatar upload attempt', [
+            'user_id' => $user->id,
+            'has_file' => $request->hasFile('avatar'),
+            'content_type' => $request->header('Content-Type')
+        ]);
+
+        $validator = Validator::make($request->all(), [
+            'avatar' => 'required|image|mimes:jpeg,png,jpg,gif|max:5120',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors(),
+                'message' => 'Validation failed'
+            ], 422);
+        }
+
+        $file = $request->file('avatar');
+        
+        if (!$file->isValid()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Uploaded file is not valid'
+            ], 400);
+        }
+
+        // Delete old avatar if exists
+        if ($user->avatar) {
+            $oldPath = str_replace('storage/', '', $user->avatar);
+            if (Storage::disk('public')->exists($oldPath)) {
+                Storage::disk('public')->delete($oldPath);
+            }
+        }
+
+        // Generate filename
+        $filename = 'avatar_' . $user->id . '_' . time() . '.' . $file->getClientOriginalExtension();
+        
+        // Store file
+        $path = $file->storeAs('avatars', $filename, 'public');
+        
+        if (!$path) {
+            throw new \Exception('Failed to store file');
+        }
+
+        // Update user record - store the path directly
+        $user->avatar = $path;
+        $user->save();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'avatar_url' => asset('storage/' . $path),
+            ],
+            'message' => 'Avatar uploaded successfully'
+        ], 200);
+
+    } catch (\Exception $e) {
+        \Log::error('Avatar upload error: ' . $e->getMessage(), [
+            'trace' => $e->getTraceAsString()
+        ]);
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to upload avatar: ' . $e->getMessage()
+        ], 500);
+    }
+}
     /**
      * Get user statistics
      */
