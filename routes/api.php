@@ -98,6 +98,19 @@ Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(functio
     Route::post('/upload', [UploadController::class, 'upload']);
 });
 
+
+
+
+
+    Route::prefix('user')->group(function () {
+        Route::get('/profile', [ProfileController::class, 'getProfile']);
+        Route::put('/profile', [ProfileController::class, 'updateProfile']);
+        Route::post('/change-password', [ProfileController::class, 'changePassword']);
+        Route::post('/avatar', [ProfileController::class, 'uploadAvatar']);
+        Route::get('/statistics', [ProfileController::class, 'getStatistics']);
+        Route::put('/preferences', [ProfileController::class, 'updatePreferences']);
+        Route::get('/activity', [ProfileController::class, 'getActivity']);
+    });
 /* ================= ADMIN DASHBOARD ================= */
 Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(function () {
     Route::get('/dashboard/stats', [DashboardController::class, 'stats']);
