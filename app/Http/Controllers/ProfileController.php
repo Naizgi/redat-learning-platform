@@ -197,6 +197,9 @@ class ProfileController extends Controller
     /**
  * Upload user avatar
  */
+/**
+ * Upload user avatar
+ */
 public function uploadAvatar(Request $request)
 {
     try {
@@ -237,11 +240,12 @@ public function uploadAvatar(Request $request)
             ], 400);
         }
 
-        // Delete old avatar if exists
+        // Delete old avatar if exists - FIXED: Don't use str_replace
         if ($user->avatar) {
-            $oldPath = str_replace('storage/', '', $user->avatar);
+            $oldPath = $user->avatar; // This is already the stored path
             if (Storage::disk('public')->exists($oldPath)) {
                 Storage::disk('public')->delete($oldPath);
+                \Log::info('Deleted old avatar', ['path' => $oldPath]);
             }
         }
 
@@ -254,6 +258,8 @@ public function uploadAvatar(Request $request)
         if (!$path) {
             throw new \Exception('Failed to store file');
         }
+
+        \Log::info('Avatar stored', ['path' => $path]);
 
         // Update user record - store the path directly
         $user->avatar = $path;
