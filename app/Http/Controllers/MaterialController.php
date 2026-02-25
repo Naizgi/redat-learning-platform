@@ -388,6 +388,46 @@ public function getFeatured(Request $request)
     }
 }
 
+
+/**
+ * Get comments for a material
+ */
+public function getComments(Material $material)
+{
+    try {
+        // Optionally authorize access if needed
+        if (!$material->is_published) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Material not found'
+            ], 404);
+        }
+
+        $comments = $material->comments()
+            ->with('user')
+            ->orderBy('created_at', 'desc')
+            ->paginate(20);
+
+        return response()->json([
+            'success' => true,
+            'data' => $comments,
+            'message' => 'Comments retrieved successfully'
+        ]);
+
+    } catch (\Exception $e) {
+        \Log::error('Error fetching comments: ' . $e->getMessage());
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch comments'
+        ], 500);
+    }
+}
+
+
+
+
+
     public function download(Material $material)
     {
         $this->authorizeAccess($material);
