@@ -8,9 +8,9 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
-use App\Http\Controllers\Controller; // Make sure this import is present
+use App\Http\Controllers\Controller; // THIS IS CRITICAL - import the base controller
 
-class ProfileController extends Controller // Extend the correct base Controller
+class ProfileController extends Controller // EXTEND the base Controller
 {
     /**
      * Constructor - apply middleware
@@ -26,57 +26,42 @@ class ProfileController extends Controller // Extend the correct base Controller
     public function getProfile(Request $request)
     {
         try {
-            Log::info('ProfileController@getProfile called', [
-                'user_id' => $request->user() ? $request->user()->id : null,
-                'authenticated' => $request->user() ? 'yes' : 'no'
-            ]);
-
+            Log::info('ProfileController@getProfile called');
+            
             $user = $request->user();
             
             if (!$user) {
-                Log::warning('No authenticated user found');
                 return response()->json([
                     'success' => false,
                     'message' => 'User not authenticated'
                 ], 401);
             }
 
-            // Basic user data without any relationships
-            $profileData = [
-                'id' => $user->id,
-                'name' => $user->name ?? '',
-                'email' => $user->email ?? '',
-                'phone' => $user->phone ?? '',
-                'address' => $user->address ?? '',
-                'bio' => $user->bio ?? '',
-                'department_id' => $user->department_id ?? null,
-                'level' => $user->level ?? '',
-                'role' => $user->role ?? 'student',
-                'avatar' => $user->avatar ? asset('storage/' . $user->avatar) : null,
-                'created_at' => $user->created_at,
-                'updated_at' => $user->updated_at,
-                'preferences' => [
-                    'emailNotifications' => true,
-                    'darkMode' => false,
-                    'language' => 'en'
-                ]
-            ];
-
-            Log::info('Profile data retrieved successfully', ['user_id' => $user->id]);
-
             return response()->json([
                 'success' => true,
-                'data' => $profileData,
-                'message' => 'Profile retrieved successfully'
-            ], 200);
+                'data' => [
+                    'id' => $user->id,
+                    'name' => $user->name ?? '',
+                    'email' => $user->email ?? '',
+                    'phone' => $user->phone ?? '',
+                    'address' => $user->address ?? '',
+                    'bio' => $user->bio ?? '',
+                    'department_id' => $user->department_id ?? null,
+                    'level' => $user->level ?? '',
+                    'role' => $user->role ?? 'student',
+                    'avatar' => $user->avatar ? asset('storage/' . $user->avatar) : null,
+                    'created_at' => $user->created_at,
+                    'updated_at' => $user->updated_at,
+                    'preferences' => [
+                        'emailNotifications' => true,
+                        'darkMode' => false,
+                        'language' => 'en'
+                    ]
+                ]
+            ]);
 
         } catch (\Exception $e) {
-            Log::error('Error in getProfile: ' . $e->getMessage(), [
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            
+            Log::error('Error in getProfile: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Server Error: ' . $e->getMessage()
@@ -90,10 +75,8 @@ class ProfileController extends Controller // Extend the correct base Controller
     public function getStatistics(Request $request)
     {
         try {
-            Log::info('ProfileController@getStatistics called', [
-                'user_id' => $request->user() ? $request->user()->id : null
-            ]);
-
+            Log::info('ProfileController@getStatistics called');
+            
             $user = $request->user();
             
             if (!$user) {
@@ -103,31 +86,20 @@ class ProfileController extends Controller // Extend the correct base Controller
                 ], 401);
             }
 
-            // Return default statistics without database queries
-            $stats = [
-                'total_materials' => 0,
-                'total_videos' => 0,
-                'completed_materials' => 0,
-                'total_time_spent' => 0,
-                'join_date' => $user->created_at,
-                'last_active' => $user->updated_at,
-            ];
-
-            Log::info('Statistics retrieved successfully', ['user_id' => $user->id]);
-
             return response()->json([
                 'success' => true,
-                'data' => $stats,
-                'message' => 'Statistics retrieved successfully'
-            ], 200);
+                'data' => [
+                    'total_materials' => 0,
+                    'total_videos' => 0,
+                    'completed_materials' => 0,
+                    'total_time_spent' => 0,
+                    'join_date' => $user->created_at,
+                    'last_active' => $user->updated_at,
+                ]
+            ]);
 
         } catch (\Exception $e) {
-            Log::error('Error in getStatistics: ' . $e->getMessage(), [
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            
+            Log::error('Error in getStatistics: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Server Error: ' . $e->getMessage()
@@ -141,10 +113,6 @@ class ProfileController extends Controller // Extend the correct base Controller
     public function updateProfile(Request $request)
     {
         try {
-            Log::info('ProfileController@updateProfile called', [
-                'user_id' => $request->user() ? $request->user()->id : null
-            ]);
-
             $user = $request->user();
             
             if (!$user) {
@@ -168,15 +136,10 @@ class ProfileController extends Controller // Extend the correct base Controller
                 'success' => true,
                 'data' => $user,
                 'message' => 'Profile updated successfully'
-            ], 200);
+            ]);
 
         } catch (\Exception $e) {
-            Log::error('Error in updateProfile: ' . $e->getMessage(), [
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            
+            Log::error('Error in updateProfile: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Server Error: ' . $e->getMessage()
@@ -190,10 +153,6 @@ class ProfileController extends Controller // Extend the correct base Controller
     public function changePassword(Request $request)
     {
         try {
-            Log::info('ProfileController@changePassword called', [
-                'user_id' => $request->user() ? $request->user()->id : null
-            ]);
-
             $user = $request->user();
             
             if (!$user) {
@@ -222,15 +181,10 @@ class ProfileController extends Controller // Extend the correct base Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Password changed successfully'
-            ], 200);
+            ]);
 
         } catch (\Exception $e) {
-            Log::error('Error in changePassword: ' . $e->getMessage(), [
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            
+            Log::error('Error in changePassword: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Server Error: ' . $e->getMessage()
@@ -244,10 +198,6 @@ class ProfileController extends Controller // Extend the correct base Controller
     public function uploadAvatar(Request $request)
     {
         try {
-            Log::info('ProfileController@uploadAvatar called', [
-                'user_id' => $request->user() ? $request->user()->id : null
-            ]);
-
             $user = $request->user();
             
             if (!$user) {
@@ -279,7 +229,7 @@ class ProfileController extends Controller // Extend the correct base Controller
                         'avatar_url' => asset('storage/' . $path)
                     ],
                     'message' => 'Avatar uploaded successfully'
-                ], 200);
+                ]);
             }
 
             return response()->json([
@@ -288,12 +238,7 @@ class ProfileController extends Controller // Extend the correct base Controller
             ], 400);
 
         } catch (\Exception $e) {
-            Log::error('Error in uploadAvatar: ' . $e->getMessage(), [
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            
+            Log::error('Error in uploadAvatar: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Server Error: ' . $e->getMessage()
@@ -307,10 +252,6 @@ class ProfileController extends Controller // Extend the correct base Controller
     public function updatePreferences(Request $request)
     {
         try {
-            Log::info('ProfileController@updatePreferences called', [
-                'user_id' => $request->user() ? $request->user()->id : null
-            ]);
-
             $user = $request->user();
             
             if (!$user) {
@@ -326,29 +267,20 @@ class ProfileController extends Controller // Extend the correct base Controller
                 'language' => 'sometimes|string|in:en,am',
             ]);
 
-            // Simple preferences storage
             $preferences = [
                 'emailNotifications' => $validated['email_notifications'] ?? true,
                 'darkMode' => $validated['dark_mode'] ?? false,
                 'language' => $validated['language'] ?? 'en'
             ];
 
-            // You can store this in a separate table or as JSON in users table
-            // For now, just return success
-
             return response()->json([
                 'success' => true,
                 'data' => $preferences,
                 'message' => 'Preferences updated successfully'
-            ], 200);
+            ]);
 
         } catch (\Exception $e) {
-            Log::error('Error in updatePreferences: ' . $e->getMessage(), [
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            
+            Log::error('Error in updatePreferences: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Server Error: ' . $e->getMessage()
@@ -362,10 +294,6 @@ class ProfileController extends Controller // Extend the correct base Controller
     public function getActivity(Request $request)
     {
         try {
-            Log::info('ProfileController@getActivity called', [
-                'user_id' => $request->user() ? $request->user()->id : null
-            ]);
-
             $user = $request->user();
             
             if (!$user) {
@@ -379,15 +307,10 @@ class ProfileController extends Controller // Extend the correct base Controller
                 'success' => true,
                 'data' => [],
                 'message' => 'Activity retrieved successfully'
-            ], 200);
+            ]);
 
         } catch (\Exception $e) {
-            Log::error('Error in getActivity: ' . $e->getMessage(), [
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            
+            Log::error('Error in getActivity: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Server Error: ' . $e->getMessage()
