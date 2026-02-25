@@ -8,8 +8,9 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use App\Http\Controllers\Controller; // Make sure this import is present
 
-class ProfileController extends Controller
+class ProfileController extends Controller // Extend the correct base Controller
 {
     /**
      * Constructor - apply middleware
