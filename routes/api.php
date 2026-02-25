@@ -86,6 +86,7 @@ Route::middleware(['auth:sanctum','subscription.active'])->group(function () {
     Route::get('/materials/{material}/download', [MaterialController::class, 'download'])->name('materials.download');
     Route::post('/materials/{material}/like', [MaterialController::class, 'like']);
     Route::post('/materials/{material}/comment', [MaterialController::class, 'comment']);
+    Route::get('/materials/{material}/comments', [MaterialController::class, 'getComments']);
     Route::post('/materials/{material}/progress', [MaterialController::class, 'updateProgress']);
     Route::get('/materials/{material}/stats', [MaterialController::class, 'getStats']);
     Route::get('/materials/recommended', [MaterialController::class, 'getRecommended']);
