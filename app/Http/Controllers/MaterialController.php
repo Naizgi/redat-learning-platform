@@ -100,9 +100,6 @@ class MaterialController extends Controller
 /**
  * Get featured materials for public/home page
  */
-/**
- * Get featured materials for public/home page
- */
 public function getFeatured(Request $request)
 {
     try {
@@ -281,7 +278,8 @@ public function getFeatured(Request $request)
                         'file_name' => $material->file_name,
                         'file_path' => $material->file_path,
                         'storage_path' => $storagePath,
-                        'full_path' => $fullPath
+                        'full_path' => $fullPath,
+                        'public_url' => asset('storage/materials/' . urlencode($material->file_name))
                     ]
                 ], 404);
             }
@@ -366,10 +364,6 @@ public function getComments(Material $material)
         ], 500);
     }
 }
-
-
-
-
 
     public function download(Material $material)
     {
@@ -587,16 +581,16 @@ public function getStats(Material $material)
      * Helper method to get the correct storage path
      */
    /**
- * Helper method to get the correct storage path
+ * Helper method to get the correct storage path - UPDATED WITH BETTER LOGGING
  */
 private function getStoragePath(Material $material): string
 {
+    \Log::info('getStoragePath called for material ID: ' . $material->id);
+    
     // If file_path is already set and exists, use it
     if (!empty($material->file_path)) {
-        // Clean the path and check if it exists
         $cleanPath = ltrim($material->file_path, '/\\');
         
-        // Try different variations of the path
         $possiblePaths = [
             $cleanPath,
             'public/' . $cleanPath,
@@ -607,7 +601,7 @@ private function getStoragePath(Material $material): string
         
         foreach ($possiblePaths as $path) {
             if (Storage::exists($path)) {
-                \Log::info('Found file at path', ['path' => $path, 'material_id' => $material->id]);
+                \Log::info('Found file at path (from file_path)', ['path' => $path, 'material_id' => $material->id]);
                 return $path;
             }
         }
@@ -626,6 +620,11 @@ private function getStoragePath(Material $material): string
         foreach ($possiblePaths as $path) {
             if (Storage::exists($path)) {
                 \Log::info('Found file by filename', ['path' => $path, 'material_id' => $material->id]);
+                
+                // Log the public URL for debugging
+                $publicUrl = asset('storage/materials/' . urlencode($material->file_name));
+                \Log::info('Public URL would be', ['url' => $publicUrl, 'material_id' => $material->id]);
+                
                 return $path;
             }
         }
@@ -643,8 +642,13 @@ private function getStoragePath(Material $material): string
         return 'public/materials/' . basename($material->file_path);
     }
     
-    return 'public/materials/' . $material->file_name;
+    if (!empty($material->file_name)) {
+        return 'public/materials/' . $material->file_name;
+    }
+    
+    return 'public/materials/unknown';
 }
+
     /**
      * Helper method to get the file URL for streaming/viewing
      */
@@ -766,6 +770,4 @@ private function getVideoContentType($fileName)
     
     return $contentTypes[$extension] ?? 'video/mp4';
 }
-
-
 }
