@@ -224,46 +224,67 @@ public function getFeatured(Request $request)
    public function stream(Material $material)
 {
     try {
-        // Remove all authentication checks for public streaming
-        // Only check if material exists and is published
+        \Log::info('========== STREAM DEBUG START ==========');
+        \Log::info('Material ID: ' . $material->id);
+        \Log::info('Material Title: ' . $material->title);
+        \Log::info('File name from DB: ' . $material->file_name);
+        \Log::info('File path from DB: ' . $material->file_path);
+        \Log::info('Is published: ' . ($material->is_published ? 'Yes' : 'No'));
+        
         if (!$material->exists) {
+            \Log::error('Material does not exist');
             abort(404, 'Material not found');
         }
         
-        // Check if material is published
         if (!$material->is_published) {
-            \Log::warning('Attempt to access unpublished material', [
-                'material_id' => $material->id,
-                'ip' => request()->ip()
-            ]);
+            \Log::warning('Material not published');
             abort(404, 'Material not available');
         }
         
-        // Get the correct storage path
+        // Get storage path
         $storagePath = $this->getStoragePath($material);
+        \Log::info('Storage path from helper: ' . $storagePath);
         
-        // Debug logging
-        \Log::info('Attempting to stream file', [
-            'material_id' => $material->id,
-            'file_name' => $material->file_name,
-            'storage_path' => $storagePath,
-            'storage_disk' => config('filesystems.default'),
-            'exists' => Storage::exists($storagePath)
-        ]);
+        // Check full system path
+        $fullPath = storage_path('app/' . $storagePath);
+        \Log::info('Full system path: ' . $fullPath);
+        \Log::info('File exists check: ' . (file_exists($fullPath) ? 'YES' : 'NO'));
+        \Log::info('File readable: ' . (is_readable($fullPath) ? 'YES' : 'NO'));
+        \Log::info('File size: ' . (file_exists($fullPath) ? filesize($fullPath) : 'N/A'));
         
-        // Check if file exists
-        if (!Storage::exists($storagePath)) {
-            \Log::error('File not found in storage', [
-                'material_id' => $material->id,
-                'storage_path' => $storagePath,
-                'file_name' => $material->file_name
-            ]);
+        // Check using Storage facade
+        $storageExists = Storage::exists($storagePath);
+        \Log::info('Storage::exists result: ' . ($storageExists ? 'YES' : 'NO'));
+        
+        if (!$storageExists) {
+            \Log::error('File not found in storage');
             
-            return response()->json([
-                'success' => false,
-                'message' => 'File not found in storage system',
-                'error' => 'FILE_NOT_FOUND'
-            ], 404);
+            // Try to find the file by searching
+            \Log::info('Searching for file by filename...');
+            $fileName = $material->file_name;
+            $files = Storage::files('public/materials');
+            $found = false;
+            foreach ($files as $file) {
+                if (str_contains($file, $fileName) || str_contains($fileName, basename($file))) {
+                    \Log::info('Found matching file: ' . $file);
+                    $storagePath = $file;
+                    $found = true;
+                    break;
+                }
+            }
+            
+            if (!$found) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'File not found in storage system',
+                    'debug' => [
+                        'file_name' => $material->file_name,
+                        'file_path' => $material->file_path,
+                        'storage_path' => $storagePath,
+                        'full_path' => $fullPath
+                    ]
+                ], 404);
+            }
         }
         
         // Increment view count
@@ -273,121 +294,43 @@ public function getFeatured(Request $request)
         try {
             $mimeType = Storage::mimeType($storagePath);
             $fileSize = Storage::size($storagePath);
-            
-            \Log::info('File details', [
-                'mime_type' => $mimeType,
-                'file_size' => $fileSize,
-                'final_path' => $storagePath,
-                'is_video' => str_starts_with($mimeType, 'video/')
-            ]);
+            \Log::info('MIME type: ' . $mimeType);
+            \Log::info('File size: ' . $fileSize);
         } catch (\Exception $e) {
-            \Log::warning('Could not get file details', ['error' => $e->getMessage()]);
-            $mimeType = 'video/mp4'; // Default to mp4 for video files
+            \Log::error('Error getting file details: ' . $e->getMessage());
+            $mimeType = 'video/mp4';
             $fileSize = Storage::size($storagePath);
         }
         
-        // Check if it's a video file
-        $isVideo = str_starts_with($mimeType, 'video/') || 
-                  $material->type === 'video' ||
-                  str_ends_with(strtolower($material->file_name), '.mp4') ||
-                  str_ends_with(strtolower($storagePath), '.mp4');
-        
-        // If we can't determine mime type but it should be video, set appropriate headers
-        if ($isVideo && !str_starts_with($mimeType, 'video/')) {
-            $mimeType = 'video/mp4';
-        }
-        
-        // Base headers
+        // Prepare headers
         $headers = [
             'Content-Type' => $mimeType,
             'Content-Length' => $fileSize,
+            'Accept-Ranges' => 'bytes',
             'Cache-Control' => 'public, max-age=31536000',
             'Access-Control-Allow-Origin' => '*',
             'Access-Control-Allow-Methods' => 'GET, HEAD, OPTIONS',
-            'Access-Control-Allow-Headers' => 'Content-Type, Authorization, Range, Accept-Encoding',
+            'Access-Control-Allow-Headers' => 'Content-Type, Range',
             'Access-Control-Expose-Headers' => 'Content-Length, Content-Range, Accept-Ranges',
-            'Accept-Ranges' => 'bytes',
         ];
         
-        // Add video-specific headers for streaming support
-        if ($isVideo) {
-            $headers['Content-Disposition'] = 'inline'; // Play inline, not download
-            
-            // Handle Range requests for video seeking
-            $rangeHeader = request()->header('Range');
-            
-            if ($rangeHeader && $fileSize > 0) {
-                // Parse range header
-                list($type, $range) = explode('=', $rangeHeader, 2);
-                
-                if ($type === 'bytes') {
-                    list($start, $end) = explode('-', $range, 2);
-                    
-                    $start = intval($start);
-                    $end = $end === '' || $end === null ? $fileSize - 1 : min(intval($end), $fileSize - 1);
-                    
-                    if ($start > $end || $start >= $fileSize) {
-                        return response('', 416, [
-                            'Content-Range' => 'bytes */' . $fileSize
-                        ]);
-                    }
-                    
-                    $length = $end - $start + 1;
-                    
-                    // Update headers for partial content
-                    $headers['Content-Range'] = 'bytes ' . $start . '-' . $end . '/' . $fileSize;
-                    $headers['Content-Length'] = $length;
-                    $headers['HTTP/1.1'] = '206 Partial Content';
-                    $statusCode = 206;
-                    
-                    \Log::info('Serving partial content', [
-                        'start' => $start,
-                        'end' => $end,
-                        'length' => $length,
-                        'range' => $rangeHeader
-                    ]);
-                    
-                    // Stream partial content more efficiently
-                    return Storage::response($storagePath, null, $headers, 'attachment', $statusCode);
-                }
-            }
-        } else {
-            // For non-video files (PDFs, documents)
-            $headers['Content-Disposition'] = 'inline; filename="' . basename($material->file_name) . '"';
-            
-            // For PDF files, add additional headers for better browser support
-            if ($mimeType === 'application/pdf') {
-                $headers['Content-Type'] = 'application/pdf';
-            }
-        }
+        \Log::info('Headers prepared: ' . json_encode($headers));
+        \Log::info('========== STREAM DEBUG END ==========');
         
-        \Log::info('Streaming file with headers', [
-            'is_video' => $isVideo,
-            'headers' => $headers,
-            'status_code' => 200
-        ]);
-        
-        // For full file requests (no range header or non-video files)
-        // Use Laravel's built-in response for better performance
         return Storage::response($storagePath, null, $headers);
         
     } catch (\Exception $e) {
-        \Log::error('Streaming error', [
-            'material_id' => $material->id ?? 'unknown',
-            'error' => $e->getMessage(),
-            'trace' => $e->getTraceAsString(),
-            'file' => $e->getFile(),
-            'line' => $e->getLine()
-        ]);
+        \Log::error('STREAM ERROR: ' . $e->getMessage());
+        \Log::error('File: ' . $e->getFile());
+        \Log::error('Line: ' . $e->getLine());
+        \Log::error('Trace: ' . $e->getTraceAsString());
         
         return response()->json([
             'success' => false,
-            'message' => 'Error streaming file: ' . $e->getMessage(),
-            'error' => 'STREAM_ERROR'
+            'message' => 'Error streaming file: ' . $e->getMessage()
         ], 500);
     }
 }
-
 
 /**
  * Get comments for a material
