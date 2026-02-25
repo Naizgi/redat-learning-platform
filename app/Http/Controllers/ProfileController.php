@@ -28,8 +28,51 @@ class ProfileController extends Controller
     public function getProfile(Request $request)
     {
         try {
-            $user = $request->user()->load('department');
+            $user = $request->user();
             
+            if (!$user) {
+                Log::warning('Profile access attempt with no authenticated user');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+
+            // Try to load department relationship if it exists
+            try {
+                if (method_exists($user, 'department')) {
+                    $user->load('department');
+                }
+            } catch (\Exception $e) {
+                Log::warning('Could not load department relationship: ' . $e->getMessage());
+                // Continue without department
+            }
+
+            // Get avatar URL safely
+            $avatarUrl = null;
+            try {
+                $avatarUrl = $user->avatar ? asset('storage/' . $user->avatar) : null;
+            } catch (\Exception $e) {
+                Log::warning('Could not generate avatar URL: ' . $e->getMessage());
+            }
+
+            // Get preferences safely
+            $preferences = [
+                'email_notifications' => true,
+                'dark_mode' => false,
+                'language' => 'en'
+            ];
+            
+            try {
+                if ($user->preferences) {
+                    $preferences = array_merge($preferences, 
+                        is_array($user->preferences) ? $user->preferences : json_decode($user->preferences, true)
+                    );
+                }
+            } catch (\Exception $e) {
+                Log::warning('Could not parse preferences: ' . $e->getMessage());
+            }
+
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -46,23 +89,26 @@ class ProfileController extends Controller
                     ] : null,
                     'level' => $user->level ?? '',
                     'role' => $user->role,
-                    'avatar' => $user->avatar_url,
+                    'avatar' => $avatarUrl,
                     'created_at' => $user->created_at,
                     'updated_at' => $user->updated_at,
                     'last_login' => $user->last_login_at ?? $user->updated_at,
                     'is_active' => $user->is_active,
-                    'preferences' => $user->preferences,
+                    'preferences' => $preferences,
                 ],
                 'message' => 'Profile retrieved successfully'
             ], 200);
 
         } catch (\Exception $e) {
-            Log::error('Error fetching profile: ' . $e->getMessage());
+            Log::error('Error fetching profile: ' . $e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
             
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to retrieve profile',
-                'error' => $e->getMessage()
+                'message' => 'Failed to retrieve profile. Please try again later.'
             ], 500);
         }
     }
@@ -75,6 +121,13 @@ class ProfileController extends Controller
         try {
             $user = $request->user();
             
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+
             $validator = Validator::make($request->all(), [
                 'name' => 'sometimes|string|max:255',
                 'email' => [
@@ -107,8 +160,26 @@ class ProfileController extends Controller
                 return !is_null($value);
             });
 
-            $user->update($updateData);
-            $user->load('department');
+            if (!empty($updateData)) {
+                $user->update($updateData);
+            }
+
+            // Try to load department if it exists
+            try {
+                if (method_exists($user, 'department')) {
+                    $user->load('department');
+                }
+            } catch (\Exception $e) {
+                // Ignore department loading errors
+            }
+
+            // Get avatar URL safely
+            $avatarUrl = null;
+            try {
+                $avatarUrl = $user->avatar ? asset('storage/' . $user->avatar) : null;
+            } catch (\Exception $e) {
+                // Ignore avatar URL errors
+            }
 
             return response()->json([
                 'success' => true,
@@ -124,18 +195,21 @@ class ProfileController extends Controller
                         'name' => $user->department->name,
                     ] : null,
                     'level' => $user->level,
-                    'avatar' => $user->avatar_url,
+                    'avatar' => $avatarUrl,
                 ],
                 'message' => 'Profile updated successfully'
             ], 200);
 
         } catch (\Exception $e) {
-            Log::error('Error updating profile: ' . $e->getMessage());
+            Log::error('Error updating profile: ' . $e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
             
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to update profile',
-                'error' => $e->getMessage()
+                'message' => 'Failed to update profile. Please try again later.'
             ], 500);
         }
     }
@@ -148,6 +222,13 @@ class ProfileController extends Controller
         try {
             $user = $request->user();
             
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+
             $validator = Validator::make($request->all(), [
                 'current_password' => 'required|string',
                 'new_password' => 'required|string|min:6|different:current_password',
@@ -181,12 +262,15 @@ class ProfileController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
-            Log::error('Error changing password: ' . $e->getMessage());
+            Log::error('Error changing password: ' . $e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
             
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to change password',
-                'error' => $e->getMessage()
+                'message' => 'Failed to change password. Please try again later.'
             ], 500);
         }
     }
@@ -206,15 +290,9 @@ class ProfileController extends Controller
                 ], 401);
             }
 
-            // Log request details
-            \Log::info('Avatar upload attempt', [
-                'user_id' => $user->id,
-                'has_file' => $request->hasFile('avatar'),
-                'content_type' => $request->header('Content-Type')
-            ]);
-
+            // Validate the request
             $validator = Validator::make($request->all(), [
-                'avatar' => 'required|image|mimes:jpeg,png,jpg,gif|max:5120',
+                'avatar' => 'required|image|mimes:jpeg,png,jpg,gif|max:5120', // 5MB max
             ]);
 
             if ($validator->fails()) {
@@ -234,28 +312,35 @@ class ProfileController extends Controller
                 ], 400);
             }
 
+            // Ensure avatars directory exists
+            $avatarsPath = storage_path('app/public/avatars');
+            if (!file_exists($avatarsPath)) {
+                mkdir($avatarsPath, 0755, true);
+            }
+
             // Delete old avatar if exists
             if ($user->avatar) {
-                $oldPath = $user->avatar;
-                if (Storage::disk('public')->exists($oldPath)) {
-                    Storage::disk('public')->delete($oldPath);
-                    \Log::info('Deleted old avatar', ['path' => $oldPath]);
+                try {
+                    if (Storage::disk('public')->exists($user->avatar)) {
+                        Storage::disk('public')->delete($user->avatar);
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('Could not delete old avatar: ' . $e->getMessage());
+                    // Continue with upload even if delete fails
                 }
             }
 
-            // Generate filename
+            // Generate unique filename
             $filename = 'avatar_' . $user->id . '_' . time() . '.' . $file->getClientOriginalExtension();
             
-            // Store file
+            // Store the file
             $path = $file->storeAs('avatars', $filename, 'public');
             
             if (!$path) {
                 throw new \Exception('Failed to store file');
             }
 
-            \Log::info('Avatar stored', ['path' => $path]);
-
-            // Update user record - store the path directly
+            // Update user record
             $user->avatar = $path;
             $user->save();
 
@@ -268,84 +353,92 @@ class ProfileController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
-            \Log::error('Avatar upload error: ' . $e->getMessage(), [
+            Log::error('Error uploading avatar: ' . $e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
                 'trace' => $e->getTraceAsString()
             ]);
             
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to upload avatar: ' . $e->getMessage()
+                'message' => 'Failed to upload avatar. Please try again later.'
             ], 500);
         }
     }
 
     /**
-     * Get user statistics - UPDATED to work with your Progress model
+     * Get user statistics
      */
     public function getStatistics(Request $request)
     {
         try {
             $user = $request->user();
             
-            // Check if tables exist by trying a simple query
-            try {
-                $totalMaterials = Material::count();
-                $totalVideos = Material::where('type', 'video')->count();
-                
-                // Use correct field names from your Progress model
-                $completedMaterials = Progress::where('user_id', $user->id)
-                    ->where('completed', true) // Using 'completed' instead of 'is_completed'
-                    ->count();
-                
-                $totalTimeSpent = Progress::where('user_id', $user->id)
-                    ->sum('time_spent_seconds') ?? 0;
-                
-                $inProgressMaterials = Progress::where('user_id', $user->id)
-                    ->where('completed', false)
-                    ->where('progress', '>', 0) // Using 'progress' instead of 'progress_percentage'
-                    ->count();
-            } catch (\Exception $tableError) {
-                // If tables don't exist, return default values
-                Log::warning('Statistics tables not ready: ' . $tableError->getMessage());
-                
+            if (!$user) {
                 return response()->json([
-                    'success' => true,
-                    'data' => [
-                        'total_materials' => 0,
-                        'total_videos' => 0,
-                        'completed_materials' => 0,
-                        'in_progress_materials' => 0,
-                        'total_time_spent' => 0,
-                        'total_time_spent_formatted' => '0 hours',
-                        'join_date' => $user->created_at,
-                        'last_active' => $user->updated_at,
-                    ],
-                    'message' => 'Statistics retrieved successfully'
-                ], 200);
+                    'success' => false,
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+
+            // Default values
+            $stats = [
+                'total_materials' => 0,
+                'total_videos' => 0,
+                'completed_materials' => 0,
+                'in_progress_materials' => 0,
+                'total_time_spent' => 0,
+                'total_time_spent_formatted' => '0 hours',
+                'join_date' => $user->created_at,
+                'last_active' => $user->updated_at,
+            ];
+
+            // Try to get real statistics if tables exist
+            try {
+                if (class_exists('App\Models\Material')) {
+                    $stats['total_materials'] = Material::count();
+                    $stats['total_videos'] = Material::where('type', 'video')->count();
+                }
+            } catch (\Exception $e) {
+                Log::warning('Could not fetch material statistics: ' . $e->getMessage());
+            }
+
+            try {
+                if (class_exists('App\Models\Progress')) {
+                    $stats['completed_materials'] = Progress::where('user_id', $user->id)
+                        ->where('completed', true)
+                        ->count();
+                    
+                    $stats['total_time_spent'] = Progress::where('user_id', $user->id)
+                        ->sum('time_spent_seconds') ?? 0;
+                    
+                    $stats['in_progress_materials'] = Progress::where('user_id', $user->id)
+                        ->where('completed', false)
+                        ->where('progress', '>', 0)
+                        ->count();
+                    
+                    $stats['total_time_spent_formatted'] = $this->formatTimeSpent($stats['total_time_spent']);
+                }
+            } catch (\Exception $e) {
+                Log::warning('Could not fetch progress statistics: ' . $e->getMessage());
             }
 
             return response()->json([
                 'success' => true,
-                'data' => [
-                    'total_materials' => $totalMaterials,
-                    'total_videos' => $totalVideos,
-                    'completed_materials' => $completedMaterials,
-                    'in_progress_materials' => $inProgressMaterials,
-                    'total_time_spent' => $totalTimeSpent,
-                    'total_time_spent_formatted' => $this->formatTimeSpent($totalTimeSpent),
-                    'join_date' => $user->created_at,
-                    'last_active' => $user->updated_at,
-                ],
+                'data' => $stats,
                 'message' => 'Statistics retrieved successfully'
             ], 200);
 
         } catch (\Exception $e) {
-            Log::error('Error fetching statistics: ' . $e->getMessage());
+            Log::error('Error fetching statistics: ' . $e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
             
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to retrieve statistics',
-                'error' => $e->getMessage()
+                'message' => 'Failed to retrieve statistics. Please try again later.'
             ], 500);
         }
     }
@@ -358,6 +451,13 @@ class ProfileController extends Controller
         try {
             $user = $request->user();
             
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+
             $validator = Validator::make($request->all(), [
                 'email_notifications' => 'sometimes|boolean',
                 'dark_mode' => 'sometimes|boolean',
@@ -372,11 +472,30 @@ class ProfileController extends Controller
                 ], 422);
             }
 
-            $currentPrefs = $user->preferences;
+            // Get current preferences
+            $currentPrefs = [];
+            if ($user->preferences) {
+                $currentPrefs = is_array($user->preferences) 
+                    ? $user->preferences 
+                    : json_decode($user->preferences, true);
+            }
+
+            // Default preferences
+            $defaultPrefs = [
+                'email_notifications' => true,
+                'dark_mode' => false,
+                'language' => 'en'
+            ];
+
+            // Merge with existing preferences
+            $currentPrefs = array_merge($defaultPrefs, $currentPrefs);
+            
+            // Update with new values
             $newPrefs = array_merge($currentPrefs, $request->only([
                 'email_notifications', 'dark_mode', 'language'
             ]));
 
+            // Save preferences
             $user->preferences = $newPrefs;
             $user->save();
 
@@ -387,41 +506,60 @@ class ProfileController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
-            Log::error('Error updating preferences: ' . $e->getMessage());
+            Log::error('Error updating preferences: ' . $e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
             
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to update preferences',
-                'error' => $e->getMessage()
+                'message' => 'Failed to update preferences. Please try again later.'
             ], 500);
         }
     }
 
     /**
-     * Get user activity - UPDATED to work with your Progress model
+     * Get user activity
      */
     public function getActivity(Request $request)
     {
         try {
             $user = $request->user();
             
-            $progress = Progress::where('user_id', $user->id)
-                ->with('material')
-                ->orderBy('updated_at', 'desc')
-                ->limit(10)
-                ->get();
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
 
-            $activities = $progress->map(function ($item) {
-                return [
-                    'id' => $item->id,
-                    'type' => 'progress',
-                    'material_id' => $item->material_id,
-                    'material_title' => $item->material->title ?? 'Unknown Material',
-                    'progress' => $item->progress ?? 0,
-                    'timestamp' => $item->updated_at,
-                    'message' => "Progress updated to {$item->progress}% on {$item->material->title}"
-                ];
-            });
+            $activities = [];
+
+            // Try to get progress activity
+            try {
+                if (class_exists('App\Models\Progress')) {
+                    $progress = Progress::where('user_id', $user->id)
+                        ->with('material')
+                        ->orderBy('updated_at', 'desc')
+                        ->limit(10)
+                        ->get();
+
+                    $activities = $progress->map(function ($item) {
+                        return [
+                            'id' => $item->id,
+                            'type' => 'progress',
+                            'material_id' => $item->material_id,
+                            'material_title' => $item->material->title ?? 'Unknown Material',
+                            'progress' => $item->progress ?? 0,
+                            'timestamp' => $item->updated_at,
+                            'message' => "Progress updated to {$item->progress}% on " . ($item->material->title ?? 'material')
+                        ];
+                    })->toArray();
+                }
+            } catch (\Exception $e) {
+                Log::warning('Could not fetch activity: ' . $e->getMessage());
+            }
 
             return response()->json([
                 'success' => true,
@@ -430,12 +568,15 @@ class ProfileController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
-            Log::error('Error fetching activity: ' . $e->getMessage());
+            Log::error('Error fetching activity: ' . $e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
             
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to retrieve activity',
-                'error' => $e->getMessage()
+                'message' => 'Failed to retrieve activity. Please try again later.'
             ], 500);
         }
     }
