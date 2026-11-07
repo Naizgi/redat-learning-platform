@@ -15,10 +15,7 @@ class ProfileController extends Controller // EXTEND the base Controller
     /**
      * Constructor - apply middleware
      */
-    public function __construct()
-    {
-        $this->middleware('auth:sanctum');
-    }
+  
 
     /**
      * Get the authenticated user's profile
