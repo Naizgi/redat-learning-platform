@@ -16,24 +16,23 @@ use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\Admin\UploadController;
 use App\Http\Controllers\VideoController;
 use App\Http\Controllers\Admin\AdminUserController;
-use App\Http\Controllers\ProfileController; // ADD THIS IMPORT
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\Admin\LevelController;
 
-Route::options('/{any}', function () {
-    return response('', 200)
-        ->header('Access-Control-Allow-Origin', 'http://localhost:5173')
-        ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-        ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
-        ->header('Access-Control-Allow-Credentials', 'true');
-})->where('any', '.*');
+/*
+ * ⚠️ The old `Route::options('/{any}', ...)` block was REMOVED.
+ * CORS is now handled exclusively by App\Http\Middleware\CorsMiddleware,
+ * which correctly echoes back the request Origin for allowed domains.
+ */
 
 /* ================= PUBLIC ROUTES (NO AUTH REQUIRED) ================= */
 Route::get('departments', [DepartmentController::class, 'index']);
+Route::get('levels', [LevelController::class, 'publicIndex']);   // ← NEW: drives filters & dropdowns
 Route::post('student/payments/submit', [PaymentController::class, 'submit']);
 Route::get('/materials/featured', [MaterialController::class, 'getFeatured']);
 
-// PUBLIC STREAMING ENDPOINT - MUST BE OUTSIDE ALL AUTH MIDDLEWARE
+// PUBLIC STREAMING ENDPOINTS (no auth)
 Route::get('/materials/{material}/stream', [MaterialController::class, 'stream'])->name('materials.stream');
-// Add this route for video streaming
 Route::get('/video/stream/{filename}', [VideoController::class, 'stream'])->name('video.stream');
 
 /* ================= AUTH ROUTES ================= */
@@ -53,7 +52,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/check-auth', [AuthController::class, 'checkAuth']);
     Route::put('/update-profile', [AuthController::class, 'updateProfile']);
     Route::post('/change-password', [AuthController::class, 'changePassword']);
-    
+
     /* ================= PROFILE ROUTES ================= */
     Route::prefix('user')->group(function () {
         Route::get('/profile', [ProfileController::class, 'getProfile']);
@@ -67,20 +66,19 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 /* ================= STUDENT ROUTES ================= */
-Route::middleware(['auth:sanctum','role:student'])->prefix('student')->group(function () {
+Route::middleware(['auth:sanctum', 'role:student'])->prefix('student')->group(function () {
     Route::get('/payments', [PaymentController::class, 'index']);
 });
 
 /* ================= ADMIN PAYMENT APPROVAL ================= */
-Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(function () {
+Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
     Route::get('/payments/pending', [PaymentApprovalController::class, 'getPendingPayments']);
     Route::post('/payments/{id}/approve', [PaymentApprovalController::class, 'approve']);
     Route::post('/payments/{id}/deny', [PaymentApprovalController::class, 'deny']);
 });
 
 /* ================= MATERIALS, LIKES, COMMENTS & PROGRESS ================= */
-// NOTE: The stream route has been moved to PUBLIC ROUTES above
-Route::middleware(['auth:sanctum','subscription.active'])->group(function () {
+Route::middleware(['auth:sanctum', 'subscription.active'])->group(function () {
     Route::get('/materials', [MaterialController::class, 'index']);
     Route::get('/materials/{material}', [MaterialController::class, 'show']);
     Route::get('/materials/{material}/download', [MaterialController::class, 'download'])->name('materials.download');
@@ -91,45 +89,52 @@ Route::middleware(['auth:sanctum','subscription.active'])->group(function () {
     Route::get('/materials/{material}/stats', [MaterialController::class, 'getStats']);
     Route::get('/materials/recommended', [MaterialController::class, 'getRecommended']);
 
-    // Keep this for backward compatibility
-    Route::post('materials/{material}/progress', [ProgressController::class,'update']);
+    // Backward compat
+    Route::post('materials/{material}/progress', [ProgressController::class, 'update']);
 
     Route::get('/progress', [ProgressController::class, 'index']);
     Route::get('/progress/{material}', [ProgressController::class, 'show']);
 });
 
-/* ================= ADMIN MATERIAL MANAGEMENT ================= */
-Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(function () {
-    // CRUD for materials
+/* ================= ADMIN + INSTRUCTOR — MATERIALS ================= */
+Route::middleware(['auth:sanctum', 'role:admin,instructor'])->prefix('admin')->group(function () {
     Route::get('materials', [AdminMaterialController::class, 'index']);
-    Route::post('materials', [AdminMaterialController::class,'store']);
-    Route::put('materials/{material}', [AdminMaterialController::class,'update']);
-    Route::delete('materials/{material}', [AdminMaterialController::class,'destroy']);
-    Route::post('materials/{material}/publish', [AdminMaterialController::class,'publish']);
-
-    // General upload
+    Route::post('materials', [AdminMaterialController::class, 'store']);
+    Route::put('materials/{material}', [AdminMaterialController::class, 'update']);
+    Route::delete('materials/{material}', [AdminMaterialController::class, 'destroy']);
+    Route::post('materials/{material}/publish', [AdminMaterialController::class, 'publish']);
     Route::post('/upload', [UploadController::class, 'upload']);
 });
 
-/* ================= ADMIN DASHBOARD ================= */
-Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(function () {
+/* ================= ADMIN — DASHBOARD ================= */
+Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
     Route::get('/dashboard/stats', [DashboardController::class, 'stats']);
     Route::get('/dashboard/stats/simple', [DashboardController::class, 'statsSimple']);
 });
 
-/* ================= ADMIN USER MANAGEMENT ================= */
-Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(function () {
-    Route::get('users', [AdminUserController::class,'index']);
-    Route::post('users', [AdminUserController::class,'store']);
-    Route::put('users/{user}', [AdminUserController::class,'update']);
-    Route::delete('users/{user}', [AdminUserController::class,'destroy']);
-    Route::post('users/{user}/resend-credentials', [AdminUserController::class,'resendCredentials']);
+/* ================= ADMIN — USER MANAGEMENT ================= */
+Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
+    Route::get('users', [AdminUserController::class, 'index']);
+    Route::post('users', [AdminUserController::class, 'store']);
+    Route::put('users/{user}', [AdminUserController::class, 'update']);
+    Route::delete('users/{user}', [AdminUserController::class, 'destroy']);
+    Route::post('users/{user}/resend-credentials', [AdminUserController::class, 'resendCredentials']);
 });
 
-Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(function () {
+/* ================= ADMIN — DEPARTMENTS ================= */
+Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
     Route::get('departments', [DepartmentController::class, 'index']);
     Route::post('departments', [DepartmentController::class, 'store']);
     Route::get('departments/{department}', [DepartmentController::class, 'show']);
     Route::put('departments/{department}', [DepartmentController::class, 'update']);
     Route::delete('departments/{department}', [DepartmentController::class, 'destroy']);
+});
+
+/* ================= ADMIN — LEVELS ================= */
+Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
+    Route::get('levels', [LevelController::class, 'index']);
+    Route::post('levels', [LevelController::class, 'store']);
+    Route::put('levels/{level}', [LevelController::class, 'update']);
+    Route::delete('levels/{level}', [LevelController::class, 'destroy']);
+    Route::post('levels/reorder', [LevelController::class, 'reorder']);
 });
