@@ -11,9 +11,6 @@ class CorsMiddleware
 {
     /**
      * Whitelist of frontend origins allowed to call the API.
-     *
-     * Add every domain you serve the SPA from
-     * (production, staging, previews, local dev).
      */
     protected array $allowedOrigins = [
         // Local dev
@@ -21,17 +18,13 @@ class CorsMiddleware
         'http://127.0.0.1:5173',
         'http://localhost:3000',
         'http://127.0.0.1:3000',
-        'http://localhost:4173',   // vite preview
+        'http://localhost:4173',
         'http://127.0.0.1:4173',
 
         // Production
         'https://redatlearninghub.com',
         'https://www.redatlearninghub.com',
         'https://api.redatlearninghub.com',
-
-        // If frontend is on Netlify / Vercel — add your URLs:
-        // 'https://your-app.netlify.app',
-        // 'https://your-app.vercel.app',
     ];
 
     public function handle(Request $request, Closure $next)
@@ -92,8 +85,6 @@ class CorsMiddleware
         }
 
         // Optional wildcard subdomain support
-        // e.g. allow everything ending in ".redatlearninghub.com"
-        // and previews like "*.netlify.app" / "*.vercel.app"
         $wildcards = [
             '/^https:\/\/([a-z0-9-]+\.)?redatlearninghub\.com$/i',
             '/^https:\/\/([a-z0-9-]+\.)?netlify\.app$/i',
