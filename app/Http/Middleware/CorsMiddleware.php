@@ -9,51 +9,103 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class CorsMiddleware
 {
+    /**
+     * Whitelist of frontend origins allowed to call the API.
+     *
+     * Add every domain you serve the SPA from
+     * (production, staging, previews, local dev).
+     */
+    protected array $allowedOrigins = [
+        // Local dev
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:4173',   // vite preview
+        'http://127.0.0.1:4173',
+
+        // Production
+        'https://redatlearninghub.com',
+        'https://www.redatlearninghub.com',
+        'https://api.redatlearninghub.com',
+
+        // If frontend is on Netlify / Vercel — add your URLs:
+        // 'https://your-app.netlify.app',
+        // 'https://your-app.vercel.app',
+    ];
+
     public function handle(Request $request, Closure $next)
     {
-        // Handle preflight requests
-        if ($request->getMethod() === "OPTIONS") {
-            return response()->json('OK', 200, [
-                'Access-Control-Allow-Origin' => 'http://localhost:5173',
-                'Access-Control-Allow-Methods' => 'GET, POST, PUT, DELETE, OPTIONS',
-                'Access-Control-Allow-Headers' => 'Content-Type, Authorization, X-Requested-With',
-                'Access-Control-Allow-Credentials' => 'true',
-                'Access-Control-Max-Age' => '86400',
-            ]);
+        $origin = $request->headers->get('Origin');
+
+        // Determine the value to echo back
+        $allowOrigin = $this->resolveAllowedOrigin($origin);
+
+        // Common CORS headers used on all responses
+        $corsHeaders = [
+            'Access-Control-Allow-Methods'     => 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers'     => 'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-TOKEN',
+            'Access-Control-Allow-Credentials' => 'true',
+            'Access-Control-Max-Age'           => '86400',
+            'Access-Control-Expose-Headers'    => 'Content-Disposition, Content-Length, X-Filename',
+            'Vary'                             => 'Origin',
+        ];
+
+        if ($allowOrigin) {
+            $corsHeaders['Access-Control-Allow-Origin'] = $allowOrigin;
+        }
+
+        // -------- Handle preflight (OPTIONS) --------
+        if ($request->getMethod() === 'OPTIONS') {
+            return response()->json('OK', 200, $corsHeaders);
         }
 
         $response = $next($request);
 
-        // Define CORS headers
-        $corsHeaders = [
-            'Access-Control-Allow-Origin' => 'http://localhost:5173',
-            'Access-Control-Allow-Methods' => 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers' => 'Content-Type, Authorization, X-Requested-With',
-            'Access-Control-Allow-Credentials' => 'true',
-            'Access-Control-Expose-Headers' => 'Content-Disposition, Content-Length, X-Filename',
+        // -------- Attach headers to all response types --------
+        if ($response instanceof BinaryFileResponse || $response instanceof StreamedResponse) {
+            foreach ($corsHeaders as $key => $value) {
+                $response->headers->set($key, $value);
+            }
+            return $response;
+        }
+
+        foreach ($corsHeaders as $key => $value) {
+            $response->headers->set($key, $value);
+        }
+
+        return $response;
+    }
+
+    /**
+     * Return the allowed origin for the given request Origin, or null.
+     */
+    private function resolveAllowedOrigin(?string $origin): ?string
+    {
+        if (!$origin) {
+            return null;
+        }
+
+        // Exact match
+        if (in_array($origin, $this->allowedOrigins, true)) {
+            return $origin;
+        }
+
+        // Optional wildcard subdomain support
+        // e.g. allow everything ending in ".redatlearninghub.com"
+        // and previews like "*.netlify.app" / "*.vercel.app"
+        $wildcards = [
+            '/^https:\/\/([a-z0-9-]+\.)?redatlearninghub\.com$/i',
+            '/^https:\/\/([a-z0-9-]+\.)?netlify\.app$/i',
+            '/^https:\/\/([a-z0-9-]+\.)?vercel\.app$/i',
         ];
 
-        // Check for BinaryFileResponse (the missing case)
-        if ($response instanceof BinaryFileResponse) {
-            foreach ($corsHeaders as $key => $value) {
-                $response->headers->set($key, $value);
+        foreach ($wildcards as $pattern) {
+            if (preg_match($pattern, $origin)) {
+                return $origin;
             }
-            return $response;
         }
 
-        // Check if response is a StreamedResponse (file download/stream)
-        if ($response instanceof StreamedResponse) {
-            foreach ($corsHeaders as $key => $value) {
-                $response->headers->set($key, $value);
-            }
-            return $response;
-        }
-
-        // For regular responses, use header() method
-        foreach ($corsHeaders as $key => $value) {
-            $response = $response->header($key, $value);
-        }
-        
-        return $response;
+        return null;
     }
 }
