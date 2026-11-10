@@ -1,23 +1,51 @@
 <?php
-return [
-    'paths' => ['api/*', 'sanctum/csrf-cookie'],
 
-    'allowed_methods' => ['*'],
+return [
+    'paths' => ['api/*', 'sanctum/csrf-cookie', 'storage/*'],
+
+    'allowed_methods' => ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 
     'allowed_origins' => [
-        'http://localhost:5173',   // local dev Vite
-        'http://localhost:3000',   // local dev CRA (if used)
-        'https://redatlearninghub.com', // production domain
-        'https://www.redatlearninghub.com', // optional: www
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:4173',
+        'http://127.0.0.1:4173',
+        'https://redatlearninghub.com',
+        'https://www.redatlearninghub.com',
+        'https://api.redatlearninghub.com',
     ],
 
-    'allowed_origins_patterns' => [],
+    'allowed_origins_patterns' => [
+        '#^https://([a-z0-9-]+\.)?redatlearninghub\.com$#',
+    ],
 
-    'allowed_headers' => ['*'],
+    // ⚠️ MUST list headers explicitly when Authorization is used
+    'allowed_headers' => [
+        'Content-Type',
+        'Authorization',
+        'Accept',
+        'Origin',
+        'X-Requested-With',
+        'X-CSRF-TOKEN',
+        'X-XSRF-TOKEN',
+        'Range',
+        'If-None-Match',
+        'If-Modified-Since',
+    ],
 
-    'exposed_headers' => [],
+    'exposed_headers' => [
+        'Content-Disposition',
+        'Content-Length',
+        'Content-Range',
+        'Accept-Ranges',
+        'X-Filename',
+    ],
 
-    'max_age' => 0,
+    // Cache preflight for 24h — faster logins
+    'max_age' => 86400,
 
-    'supports_credentials' => false,
+    // ✅ Must be true so browser sends the Authorization header
+    'supports_credentials' => true,
 ];

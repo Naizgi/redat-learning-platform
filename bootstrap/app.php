@@ -12,11 +12,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // ❌ Remove CorsMiddleware — Laravel's HandleCors handles it via config/cors.php
+        // $middleware->append(\App\Http\Middleware\CorsMiddleware::class);
 
-        // ✅ CORS applied GLOBALLY so it also handles OPTIONS preflight requests
-        $middleware->append(\App\Http\Middleware\CorsMiddleware::class);
-
-        // ✅ Middleware aliases
         $middleware->alias([
             'role' => \App\Http\Middleware\CheckRole::class,
             'subscription.active' => \App\Http\Middleware\ActiveSubscription::class,
