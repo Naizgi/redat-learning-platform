@@ -17,6 +17,7 @@ class MaterialController extends Controller
         try {
             \Log::info('Materials index called', [
                 'department_id' => $request->department_id,
+                'level_id' => $request->level_id,
                 'user_id' => $request->user() ? $request->user()->id : null
             ]);
 
@@ -42,8 +43,12 @@ class MaterialController extends Controller
                 ]);
             }
 
-            // Apply other filters
-            if ($request->filled('level')) {
+            // ── NEW: Apply level_id filter ──
+            if ($request->filled('level_id')) {
+                $query->where('level_id', $request->level_id);
+            }
+            // ── Fallback for old clients still sending legacy 'level' ──
+            elseif ($request->filled('level')) {
                 $query->where('level', $request->level);
             }
 
