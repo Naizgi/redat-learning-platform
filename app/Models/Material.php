@@ -9,17 +9,18 @@ use Illuminate\Support\Facades\Storage;
 class Material extends Model
 {
     protected $fillable = [
-        'department_id', 
-        'created_by', 
-        'title', 
+        'department_id',
+        'level_id',              // ← NEW: FK to levels table
+        'created_by',
+        'title',
         'description',
-        'type', 
-        'file_path', 
-        'file_name', 
+        'type',
+        'file_path',
+        'file_name',
         'file_size',
-        'duration', 
-        'is_published', 
-        'level',
+        'duration',
+        'is_published',
+        'level',                 // legacy tinyint (1-4), kept for backward compat
         'difficulty',
         'tags',
         'pages',
@@ -27,54 +28,68 @@ class Material extends Model
         'views_count',
         'download_count',
         'average_rating',
-        'youtube_id',        // New field
-        'youtube_url',       // New field
-        'thumbnail_url'      // New field
+        'youtube_id',
+        'youtube_url',
+        'thumbnail_url',
     ];
 
     protected $casts = [
-        'is_published' => 'boolean',
-        'views_count' => 'integer',
+        'is_published'   => 'boolean',
+        'views_count'    => 'integer',
         'download_count' => 'integer',
         'average_rating' => 'float',
-        'pages' => 'integer',
-        'file_size' => 'integer',
-        'tags' => 'array'
+        'pages'          => 'integer',
+        'file_size'      => 'integer',
+        'tags'           => 'array',
+        'level_id'       => 'integer',   // ← NEW
     ];
 
-    public function department() {
+    /* ============================================================
+     *  RELATIONSHIPS
+     * ============================================================ */
+    public function department()
+    {
         return $this->belongsTo(Department::class);
     }
 
-    public function createdBy() {
+    public function level()   // ← NEW
+    {
+        return $this->belongsTo(Level::class);
+    }
+
+    public function createdBy()
+    {
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    public function likes() {
+    public function likes()
+    {
         return $this->hasMany(MaterialLike::class);
     }
 
-    public function comments() {
+    public function comments()
+    {
         return $this->hasMany(MaterialComment::class);
     }
 
-    public function progress() {
+    public function progress()
+    {
         return $this->hasMany(Progress::class);
     }
 
-    // Accessor for likes_count
+    /* ============================================================
+     *  ACCESSORS
+     * ============================================================ */
     public function getLikesCountAttribute()
     {
         return $this->likes()->count();
     }
 
-    // Accessor for comments_count
     public function getCommentsCountAttribute()
     {
         return $this->comments()->count();
     }
 
-    // Check if current user liked this material
     public function getIsLikedAttribute()
     {
         if (!auth()->check()) {
@@ -83,7 +98,9 @@ class Material extends Model
         return $this->likes()->where('user_id', auth()->id())->exists();
     }
 
-    // Safe increment method
+    /* ============================================================
+     *  HELPERS
+     * ============================================================ */
     public function safeIncrement($column)
     {
         if (Schema::hasColumn($this->getTable(), $column)) {
@@ -92,7 +109,9 @@ class Material extends Model
         return false;
     }
 
-    // New: YouTube-related accessors and methods
+    /* ============================================================
+     *  YOUTUBE
+     * ============================================================ */
     public function getIsYoutubeAttribute()
     {
         return $this->type === 'youtube';
@@ -109,7 +128,8 @@ class Material extends Model
     public function getYoutubeThumbnailAttribute()
     {
         if ($this->is_youtube && $this->youtube_id) {
-            return $this->thumbnail_url ?: "https://img.youtube.com/vi/{$this->youtube_id}/maxresdefault.jpg";
+            return $this->thumbnail_url
+                ?: "https://img.youtube.com/vi/{$this->youtube_id}/maxresdefault.jpg";
         }
         return null;
     }
@@ -137,53 +157,55 @@ class Material extends Model
         if ($this->is_youtube) {
             return $this->youtube_thumbnail;
         } elseif ($this->type === 'video' && $this->file_path) {
-            // You might want to generate thumbnails for uploaded videos
             return null;
         }
         return null;
     }
 
-    // Helper to extract YouTube ID
     public static function extractYoutubeId($url)
     {
         $patterns = [
             '/^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/',
             '/youtube\.com\/shorts\/([^#&?]+)/',
-            '/youtube\.com\/live\/([^#&?]+)/'
+            '/youtube\.com\/live\/([^#&?]+)/',
         ];
-        
+
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $url, $matches)) {
                 return $matches[count($matches) - 1];
             }
         }
-        
         return null;
     }
 
-    // Get YouTube video duration (you might want to implement this via API)
     public function getYoutubeDurationAttribute()
     {
-        // This would require YouTube API integration
-        // For now, return null or implement caching
         return $this->duration;
     }
 
-    // Scope for YouTube videos
+    /* ============================================================
+     *  SCOPES
+     * ============================================================ */
     public function scopeYoutube($query)
     {
         return $query->where('type', 'youtube');
     }
 
-    // Scope for uploaded videos
     public function scopeUploadedVideo($query)
     {
         return $query->where('type', 'video');
     }
 
-    // Scope for documents
     public function scopeDocument($query)
     {
         return $query->where('type', 'document');
+    }
+
+    /**
+     * Filter by levels table FK (new).
+     */
+    public function scopeByLevel($query, $levelId)   // ← NEW
+    {
+        return $query->where('level_id', $levelId);
     }
 }
