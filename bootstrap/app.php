@@ -13,10 +13,8 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware) {
 
-        // ✅ CORS ONLY for API
-        $middleware->api(prepend: [
-            \App\Http\Middleware\CorsMiddleware::class,
-        ]);
+        // ✅ CORS applied GLOBALLY so it also handles OPTIONS preflight requests
+        $middleware->append(\App\Http\Middleware\CorsMiddleware::class);
 
         // ✅ Middleware aliases
         $middleware->alias([
