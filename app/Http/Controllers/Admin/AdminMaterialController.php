@@ -16,8 +16,10 @@ class AdminMaterialController extends Controller
         
         // Apply filters
         if ($request->has('search')) {
-            $query->where('title', 'like', '%' . $request->search . '%')
+            $query->where(function($q) use ($request) {
+                $q->where('title', 'like', '%' . $request->search . '%')
                   ->orWhere('description', 'like', '%' . $request->search . '%');
+            });
         }
         
         if ($request->has('department_id')) {
@@ -38,6 +40,11 @@ class AdminMaterialController extends Controller
         
         if ($request->has('is_published')) {
             $query->where('is_published', $request->is_published);
+        }
+
+        // ── NEW: Filter by creator (used by Instructors) ──
+        if ($request->filled('created_by')) {
+            $query->where('created_by', $request->created_by);
         }
         
         // Sort
