@@ -171,4 +171,21 @@ class LevelController extends Controller
 
         return response()->json(['success' => true, 'message' => 'Reordered']);
     }
+
+
+    /**
+ * ADMIN: PATCH /api/admin/levels/{level}/toggle
+ * Enable or hide a level (soft — doesn't delete).
+ */
+    public function toggle(\App\Models\Level $level)
+    {
+        $level->update(['is_active' => !$level->is_active]);
+        \Illuminate\Support\Facades\Cache::forget('public_levels_v2');
+
+        return response()->json([
+            'success' => true,
+            'message' => $level->is_active ? 'Level enabled' : 'Level hidden',
+            'level'   => $level->fresh(),
+        ]);
+    }
 }

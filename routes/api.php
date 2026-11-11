@@ -18,20 +18,15 @@ use App\Http\Controllers\VideoController;
 use App\Http\Controllers\Admin\AdminUserController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Admin\LevelController;
-
-/*
- * ⚠️ The old `Route::options('/{any}', ...)` block was REMOVED.
- * CORS is now handled exclusively by App\Http\Middleware\CorsMiddleware,
- * which correctly echoes back the request Origin for allowed domains.
- */
+use App\Http\Controllers\Admin\SubDepartmentController;
 
 /* ================= PUBLIC ROUTES (NO AUTH REQUIRED) ================= */
 Route::get('departments', [DepartmentController::class, 'index']);
-Route::get('levels', [LevelController::class, 'publicIndex']);   // ← NEW: drives filters & dropdowns
+Route::get('levels', [LevelController::class, 'publicIndex']);
+Route::get('sub-departments', [SubDepartmentController::class, 'publicIndex']);
 Route::post('student/payments/submit', [PaymentController::class, 'submit']);
 Route::get('/materials/featured', [MaterialController::class, 'getFeatured']);
 
-// PUBLIC STREAMING ENDPOINTS (no auth)
 Route::get('/materials/{material}/stream', [MaterialController::class, 'stream'])->name('materials.stream');
 Route::get('/video/stream/{filename}', [VideoController::class, 'stream'])->name('video.stream');
 
@@ -53,7 +48,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/update-profile', [AuthController::class, 'updateProfile']);
     Route::post('/change-password', [AuthController::class, 'changePassword']);
 
-    /* ================= PROFILE ROUTES ================= */
     Route::prefix('user')->group(function () {
         Route::get('/profile', [ProfileController::class, 'getProfile']);
         Route::put('/profile', [ProfileController::class, 'updateProfile']);
@@ -89,7 +83,6 @@ Route::middleware(['auth:sanctum', 'subscription.active'])->group(function () {
     Route::get('/materials/{material}/stats', [MaterialController::class, 'getStats']);
     Route::get('/materials/recommended', [MaterialController::class, 'getRecommended']);
 
-    // Backward compat
     Route::post('materials/{material}/progress', [ProgressController::class, 'update']);
 
     Route::get('/progress', [ProgressController::class, 'index']);
@@ -104,6 +97,12 @@ Route::middleware(['auth:sanctum', 'role:admin,instructor'])->prefix('admin')->g
     Route::delete('materials/{material}', [AdminMaterialController::class, 'destroy']);
     Route::post('materials/{material}/publish', [AdminMaterialController::class, 'publish']);
     Route::post('/upload', [UploadController::class, 'upload']);
+
+    // Sub-divisions
+    Route::get('sub-departments', [SubDepartmentController::class, 'index']);
+    Route::post('sub-departments', [SubDepartmentController::class, 'store']);
+    Route::put('sub-departments/{subDepartment}', [SubDepartmentController::class, 'update']);
+    Route::delete('sub-departments/{subDepartment}', [SubDepartmentController::class, 'destroy']);
 });
 
 /* ================= ADMIN — DASHBOARD ================= */
@@ -137,4 +136,5 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     Route::put('levels/{level}', [LevelController::class, 'update']);
     Route::delete('levels/{level}', [LevelController::class, 'destroy']);
     Route::post('levels/reorder', [LevelController::class, 'reorder']);
+    Route::patch('levels/{level}/toggle', [LevelController::class, 'toggle']);
 });

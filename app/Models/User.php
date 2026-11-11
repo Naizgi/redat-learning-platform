@@ -21,6 +21,7 @@ class User extends Authenticatable
         'email',
         'password',
         'department_id',
+        'sub_department_id',
         'role',
         'is_active',
         'email_verified_at',
@@ -68,6 +69,11 @@ class User extends Authenticatable
     public function department()
     {
         return $this->belongsTo(Department::class);
+    }
+
+    public function subDepartment()
+    {
+        return $this->belongsTo(\App\Models\SubDepartment::class);
     }
 
     public function subscription()

@@ -10,6 +10,7 @@ class Material extends Model
 {
     protected $fillable = [
         'department_id',
+        'sub_department_id',
         'level_id',              // ← NEW: FK to levels table
         'created_by',
         'title',
@@ -50,6 +51,10 @@ class Material extends Model
     public function department()
     {
         return $this->belongsTo(Department::class);
+    }
+    public function subDepartment()
+    {
+        return $this->belongsTo(\App\Models\SubDepartment::class);
     }
 
     public function level()   // ← NEW
