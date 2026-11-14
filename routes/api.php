@@ -19,6 +19,8 @@ use App\Http\Controllers\Admin\AdminUserController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Admin\LevelController;
 use App\Http\Controllers\Admin\SubDepartmentController;
+use App\Http\Controllers\Api\SettingsController;              // ← NEW
+use App\Http\Controllers\Admin\SettingsAdminController;       // ← NEW
 
 /* ================= PUBLIC ROUTES (NO AUTH REQUIRED) ================= */
 Route::get('departments', [DepartmentController::class, 'index']);
@@ -26,6 +28,9 @@ Route::get('levels', [LevelController::class, 'publicIndex']);
 Route::get('sub-departments', [SubDepartmentController::class, 'publicIndex']);
 Route::post('student/payments/submit', [PaymentController::class, 'submit']);
 Route::get('/materials/featured', [MaterialController::class, 'getFeatured']);
+
+// Public platform settings (used by Register/Login pages to read payment toggle)
+Route::get('settings/public', [SettingsController::class, 'public']);   // ← NEW
 
 Route::get('/materials/{material}/stream', [MaterialController::class, 'stream'])->name('materials.stream');
 Route::get('/video/stream/{filename}', [VideoController::class, 'stream'])->name('video.stream');
@@ -69,6 +74,12 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     Route::get('/payments/pending', [PaymentApprovalController::class, 'getPendingPayments']);
     Route::post('/payments/{id}/approve', [PaymentApprovalController::class, 'approve']);
     Route::post('/payments/{id}/deny', [PaymentApprovalController::class, 'deny']);
+});
+
+/* ================= ADMIN — PLATFORM SETTINGS ================= */
+Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
+    Route::get('/settings/payment',  [SettingsAdminController::class, 'getPaymentSetting']);   // ← NEW
+    Route::post('/settings/payment', [SettingsAdminController::class, 'setPaymentSetting']);   // ← NEW
 });
 
 /* ================= MATERIALS, LIKES, COMMENTS & PROGRESS ================= */
