@@ -59,6 +59,7 @@ class AuthController extends Controller
                 'password'              => $request->input('password'),
                 'password_confirmation' => $request->input('password_confirmation'),
                 'department_id'         => $request->input('department_id'),
+                'phone'                 => $request->input('phone'),
             ];
         }
 
@@ -90,6 +91,7 @@ class AuthController extends Controller
                 'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/',
             ],
             'department_id' => 'required|exists:departments,id',
+            'phone'         => 'nullable|string|max:20',   // ← NEW
         ], [
             'password.regex' => 'Password must contain at least one uppercase letter, one lowercase letter, and one number.',
         ]);
@@ -125,6 +127,7 @@ class AuthController extends Controller
                 'email'             => $validated['email'],
                 'password'          => $validated['password'],
                 'department_id'     => $validated['department_id'],
+                'phone'             => $validated['phone'] ?? null,   // ← NEW
                 'role'              => 'student',
                 'is_active'         => false,
                 'email_verified_at' => null,
@@ -134,6 +137,7 @@ class AuthController extends Controller
                 'id'               => $user->id,
                 'email'            => $user->email,
                 'department_id'    => $user->department_id,
+                'phone'            => $user->phone,
                 'payment_required' => $paymentRequired,
             ]);
 
@@ -199,8 +203,6 @@ class AuthController extends Controller
             }
 
             /* ---------- PRE-CREATE SUBSCRIPTION WHEN PAYMENT OFF ---------- */
-            // The student has no way to pay, so give them access once they verify.
-            // (Verification itself will flip is_active = true — see verifyOtp().)
             if (!$paymentRequired) {
                 $start = now();
                 $end   = now()->addYear();
@@ -514,7 +516,6 @@ class AuthController extends Controller
         }
 
         // Only students require admin activation (payment-ON flow).
-        // Students activated by verifyOtp() when payment is OFF already have is_active = true.
         if ($user->role === 'student' && !$user->is_active) {
             return response()->json(['message' => 'Account not activated by admin'], 403);
         }
