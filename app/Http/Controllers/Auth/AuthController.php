@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\EmailOtp;
+use App\Models\Setting;
+use App\Models\Subscription;
 use App\Mail\SendOtpMail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -110,103 +112,149 @@ class AuthController extends Controller
         $validated = $validator->validated();
         \Log::info('Validation passed', ['email' => $validated['email']]);
 
+        /* ---------- PAYMENT TOGGLE ---------- */
+        $paymentRequired = Setting::paymentRequired();
+
         /* ---------- TRANSACTION ---------- */
         try {
             DB::beginTransaction();
 
             $user = User::create([
-                'name'          => $validated['name'],
-                'email'         => $validated['email'],
-                'password'      => $validated['password'],
-                'department_id' => $validated['department_id'],
-                'role'          => 'student',
-                'is_active'     => false,
+                'name'              => $validated['name'],
+                'email'             => $validated['email'],
+                'password'          => $validated['password'],
+                'department_id'     => $validated['department_id'],
+                'role'              => 'student',
+                'is_active'         => !$paymentRequired,
+                'email_verified_at' => $paymentRequired ? null : now(),
             ]);
 
             \Log::info('User created', [
-                'id'            => $user->id,
-                'email'         => $user->email,
-                'department_id' => $user->department_id,
+                'id'             => $user->id,
+                'email'          => $user->email,
+                'department_id'  => $user->department_id,
+                'payment_required' => $paymentRequired,
             ]);
 
-            /* ---------- OTP ---------- */
-            $otp = rand(100000, 999999);
-
-            $emailOtp = EmailOtp::firstOrCreate(
-                ['user_id' => $user->id],
-                [
-                    'otp'        => $otp,
-                    'expires_at' => now()->addMinutes(10),
-                ]
-            );
-
-            if ($emailOtp->wasRecentlyCreated === false) {
-                $emailOtp->update([
-                    'otp'         => $otp,
-                    'expires_at'  => now()->addMinutes(10),
-                    'verified_at' => null,
-                ]);
-            }
-
-            \Log::info('OTP created', [
-                'user_id'    => $user->id,
-                'otp'        => $otp,
-                'expires_at' => $emailOtp->expires_at,
-            ]);
-
-            /* ---------- EMAIL ---------- */
+            $otp     = null;
+            $emailOtp = null;
             $emailSent  = false;
             $emailError = null;
 
-            try {
-                \Log::info('Attempting to send OTP email', [
-                    'to'   => $user->email,
-                    'from' => config('mail.from.address'),
+            if ($paymentRequired) {
+                /* ---------- OTP (payment ON) ---------- */
+                $otp = rand(100000, 999999);
+
+                $emailOtp = EmailOtp::firstOrCreate(
+                    ['user_id' => $user->id],
+                    [
+                        'otp'        => $otp,
+                        'expires_at' => now()->addMinutes(10),
+                    ]
+                );
+
+                if ($emailOtp->wasRecentlyCreated === false) {
+                    $emailOtp->update([
+                        'otp'         => $otp,
+                        'expires_at'  => now()->addMinutes(10),
+                        'verified_at' => null,
+                    ]);
+                }
+
+                \Log::info('OTP created', [
+                    'user_id'    => $user->id,
+                    'otp'        => $otp,
+                    'expires_at' => $emailOtp->expires_at,
                 ]);
 
-                Mail::to($user->email)->queue(new SendOtpMail($otp, $user->name));
-                $emailSent = true;
-                \Log::info('OTP email queued successfully');
+                /* ---------- EMAIL ---------- */
+                try {
+                    \Log::info('Attempting to send OTP email', [
+                        'to'   => $user->email,
+                        'from' => config('mail.from.address'),
+                    ]);
 
-            } catch (\Exception $emailException) {
-                $emailError = $emailException->getMessage();
-                \Log::error('Email queueing failed', [
-                    'error'   => $emailError,
+                    Mail::to($user->email)->queue(new SendOtpMail($otp, $user->name));
+                    $emailSent = true;
+                    \Log::info('OTP email queued successfully');
+
+                } catch (\Exception $emailException) {
+                    $emailError = $emailException->getMessage();
+                    \Log::error('Email queueing failed', [
+                        'error'   => $emailError,
+                        'user_id' => $user->id,
+                        'email'   => $user->email,
+                    ]);
+
+                    try {
+                        \Log::info('Attempting immediate email send as fallback');
+                        Mail::to($user->email)->send(new SendOtpMail($otp, $user->name));
+                        $emailSent = true;
+                        \Log::info('Immediate email send successful');
+                    } catch (\Exception $immediateEmailException) {
+                        $emailError = $immediateEmailException->getMessage();
+                        \Log::error('Immediate email send also failed', [
+                            'error' => $emailError,
+                            'otp'   => $otp,
+                        ]);
+                    }
+                }
+            } else {
+                /* ---------- PAYMENT OFF: instant activation + subscription ---------- */
+                $start = now();
+                $end   = now()->addYear();
+
+                Subscription::updateOrCreate(
+                    ['user_id' => $user->id],
+                    [
+                        'plan_id'          => null,
+                        'status'           => 'active',
+                        'start_date'       => $start,
+                        'end_date'         => $end,
+                        'expires_at'       => $end,
+                        'auto_renew'       => false,
+                        'created_by_admin' => false,
+                        'notes'            => 'Auto-activated: payment verification disabled',
+                        'amount'           => 0,
+                    ]
+                );
+
+                \Log::info('User auto-activated (payment disabled)', [
                     'user_id' => $user->id,
                     'email'   => $user->email,
                 ]);
-
-                try {
-                    \Log::info('Attempting immediate email send as fallback');
-                    Mail::to($user->email)->send(new SendOtpMail($otp, $user->name));
-                    $emailSent = true;
-                    \Log::info('Immediate email send successful');
-                } catch (\Exception $immediateEmailException) {
-                    $emailError = $immediateEmailException->getMessage();
-                    \Log::error('Immediate email send also failed', [
-                        'error' => $emailError,
-                        'otp'   => $otp,
-                    ]);
-                }
             }
 
             DB::commit();
 
-            $response = [
-                'success'    => true,
-                'message'    => 'Registration successful. ' .
-                                ($emailSent
-                                    ? 'OTP has been sent to your email.'
-                                    : 'Please check your email for OTP (may be in spam).'),
-                'user_id'    => $user->id,
-                'email'      => $user->email,
-                'email_sent' => $emailSent,
-                'next_step'  => 'verify_otp',
-            ];
+            if ($paymentRequired) {
+                $response = [
+                    'success'          => true,
+                    'message'          => 'Registration successful. ' .
+                                          ($emailSent
+                                              ? 'OTP has been sent to your email.'
+                                              : 'Please check your email for OTP (may be in spam).'),
+                    'user_id'          => $user->id,
+                    'email'            => $user->email,
+                    'email_sent'       => $emailSent,
+                    'next_step'        => 'verify_otp',
+                    'requires_payment' => true,
+                ];
 
-            if (app()->environment('local', 'staging')) {
-                $response['debug_otp']   = $otp;
-                $response['otp_expires'] = $emailOtp->expires_at->format('Y-m-d H:i:s');
+                if (app()->environment('local', 'staging')) {
+                    $response['debug_otp']   = $otp;
+                    $response['otp_expires'] = $emailOtp?->expires_at?->format('Y-m-d H:i:s');
+                }
+            } else {
+                $response = [
+                    'success'          => true,
+                    'message'          => 'Registration successful. Your account is active — you can sign in now.',
+                    'user_id'          => $user->id,
+                    'email'            => $user->email,
+                    'email_sent'       => false,
+                    'next_step'        => 'login',
+                    'requires_payment' => false,
+                ];
             }
 
             RateLimiter::hit($rateLimitKey, $decayMinutes * 60);
@@ -311,11 +359,51 @@ class AuthController extends Controller
                 'email'   => $user->email,
             ]);
 
+            /* ---------- PAYMENT TOGGLE: activate if OFF ---------- */
+            $paymentRequired = Setting::paymentRequired();
+
+            if (!$paymentRequired) {
+                $start = now();
+                $end   = now()->addYear();
+
+                $user->update(['is_active' => true]);
+
+                $hasActiveSub = Subscription::where('user_id', $user->id)
+                    ->where('status', 'active')
+                    ->where('end_date', '>', now())
+                    ->exists();
+
+                if (!$hasActiveSub) {
+                    Subscription::updateOrCreate(
+                        ['user_id' => $user->id],
+                        [
+                            'plan_id'          => null,
+                            'status'           => 'active',
+                            'start_date'       => $start,
+                            'end_date'         => $end,
+                            'expires_at'       => $end,
+                            'auto_renew'       => false,
+                            'created_by_admin' => false,
+                            'notes'            => 'Auto-activated at email verification: payment verification disabled',
+                            'amount'           => 0,
+                        ]
+                    );
+                }
+
+                \Log::info('User auto-activated at OTP verification (payment disabled)', [
+                    'user_id' => $user->id,
+                    'email'   => $user->email,
+                ]);
+            }
+
             return response()->json([
-                'success' => true,
-                'message' => 'Email verified successfully. Wait for admin activation.',
-                'user_id' => $user->id,
-                'email'   => $user->email,
+                'success'          => true,
+                'message'          => $paymentRequired
+                    ? 'Email verified successfully. Wait for admin activation.'
+                    : 'Email verified successfully. Your account is active — you can sign in now.',
+                'user_id'          => $user->id,
+                'email'            => $user->email,
+                'requires_payment' => $paymentRequired,
             ]);
 
         } catch (\Exception $e) {
@@ -428,19 +516,59 @@ class AuthController extends Controller
             return response()->json(['message' => 'Invalid credentials'], 401);
         }
 
-        if (!$user->email_verified_at) {
-            return response()->json(['message' => 'Email not verified'], 403);
+        $paymentRequired = Setting::paymentRequired();
+
+        // ===== PAYMENT OFF: auto-activate students, skip ALL the gates =====
+        if (!$paymentRequired && $user->role === 'student') {
+            if (!$user->email_verified_at) {
+                $user->update(['email_verified_at' => now()]);
+            }
+
+            if (!$user->is_active) {
+                $user->update(['is_active' => true]);
+            }
+
+            $hasActiveSub = Subscription::where('user_id', $user->id)
+                ->where('status', 'active')
+                ->where('end_date', '>', now())
+                ->exists();
+
+            if (!$hasActiveSub) {
+                Subscription::updateOrCreate(
+                    ['user_id' => $user->id],
+                    [
+                        'plan_id'          => null,
+                        'status'           => 'active',
+                        'start_date'       => now(),
+                        'end_date'         => now()->addYear(),
+                        'expires_at'       => now()->addYear(),
+                        'auto_renew'       => false,
+                        'created_by_admin' => false,
+                        'notes'            => 'Auto-activated at login: payment verification disabled',
+                        'amount'           => 0,
+                    ]
+                );
+
+                \Log::info('Legacy user auto-activated at login', [
+                    'user_id' => $user->id,
+                    'email'   => $user->email,
+                ]);
+            }
         }
 
-        // Only students require admin activation.
-        // Admins & instructors are implicitly active once email is verified.
-        if ($user->role === 'student' && !$user->is_active) {
-            return response()->json(['message' => 'Account not activated by admin'], 403);
+        // ===== PAYMENT ON (or non-student): existing gates apply =====
+        if ($paymentRequired || $user->role !== 'student') {
+            if (!$user->email_verified_at) {
+                return response()->json(['message' => 'Email not verified'], 403);
+            }
+
+            if ($user->role === 'student' && !$user->is_active) {
+                return response()->json(['message' => 'Account not activated by admin'], 403);
+            }
         }
 
         $token = $user->createToken('api-token')->plainTextToken;
 
-        // Non-fatal last-login update
         try {
             $user->update(['last_login_at' => now()]);
         } catch (\Throwable $e) {
@@ -451,7 +579,7 @@ class AuthController extends Controller
             'success'     => true,
             'token'       => $token,
             'token_type'  => 'Bearer',
-            'user'        => $user,
+            'user'        => $user->fresh(),
             'role'        => $user->role,
             'redirect_to' => $this->redirectForRole($user->role),
         ]);
@@ -464,7 +592,7 @@ class AuthController extends Controller
     {
         return match ($role) {
             'admin', 'instructor' => '/admin/dashboard',
-            default               => '/learnthru',
+            default               => '/dashboard',
         };
     }
 
