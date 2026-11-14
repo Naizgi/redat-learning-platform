@@ -6,37 +6,61 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Str;
+use App\Mail\UserCredentialsMail;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
 class PasswordResetController extends Controller
 {
-    // Send password reset OTP/email link
+    // Send password reset OTP via the shared UserCredentialsMail (type = password_reset_otp)
     public function sendResetLink(Request $request)
     {
         $request->validate([
             'email' => 'required|email|exists:users,email',
         ]);
 
-        // Generate 6-digit numeric OTP (000000 to 999999)
+        $email = strtolower(trim($request->email));
+
+        // Generate 6-digit numeric OTP
         $token = sprintf('%06d', mt_rand(0, 999999));
 
         // Store or update token
         DB::table('password_reset_tokens')->updateOrInsert(
-            ['email' => $request->email],
+            ['email' => $email],
             ['token' => $token, 'created_at' => now()]
         );
 
-        // Send email with OTP
-        Mail::raw("Your password reset OTP is: $token", function ($message) use ($request) {
-            $message->to($request->email)
-                    ->subject('Password Reset OTP');
-        });
+        $user = User::where('email', $email)->first();
+
+        // Send via the shared mailable + shared blade
+        // Blade branches on `type` and renders the OTP variant.
+        try {
+            Mail::to($email)->send(new UserCredentialsMail([
+                'type'               => 'password_reset_otp',
+                'name'               => $user->name ?? 'there',
+                'email'              => $email,
+                'otp'                => $token,
+                'expires_in_minutes' => 15,
+                'reset_url'          => rtrim(config('app.url'), '/') . '/reset-password',
+                'support_email'      => 'support@redatlearninghub.com',
+                'site_name'          => 'Redat Learning Hub',
+            ]));
+        } catch (\Throwable $e) {
+            \Log::error('Password reset OTP email failed', [
+                'email' => $email,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Could not send reset code. Please try again.',
+            ], 500);
+        }
 
         return response()->json([
-            'message' => 'Password reset OTP sent to email.'
+            'success' => true,
+            'message' => 'Password reset OTP sent to email.',
         ]);
     }
 
@@ -44,8 +68,8 @@ class PasswordResetController extends Controller
     public function reset(Request $request)
     {
         $request->validate([
-            'email' => 'required|email|exists:users,email',
-            'token' => 'required|string',
+            'email'    => 'required|email|exists:users,email',
+            'token'    => 'required|string',
             'password' => 'required|string|confirmed|min:6',
         ]);
 
