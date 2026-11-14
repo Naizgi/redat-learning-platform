@@ -1,19 +1,48 @@
 @php
-    $rType     = $type     ?? $data['type']     ?? 'new';
-    $rName     = $name     ?? $user_name        ?? $data['name']         ?? 'there';
-    $rEmail    = $email    ?? $user_email       ?? $data['email']        ?? '';
-    $rRole     = $role     ?? $user_role        ?? $data['role']         ?? 'student';
-    $rPassword = $password ?? $temp_password    ?? $data['password']     ?? null;
-    $rOtp      = $otp      ?? $data['otp']      ?? null;
-    $rExpires  = $expiresInMinutes ?? $expires_in_minutes ?? $data['expires_in_minutes'] ?? 10;
-    $rLoginUrl = $loginUrl ?? $login_url        ?? $data['login_url']    ?? (config('app.url') . '/login');
-    $rResetUrl = $resetUrl ?? $reset_url        ?? $data['reset_url']    ?? (config('app.url') . '/reset-password');
-    $rSupport  = $supportEmail ?? $support_email ?? $data['support_email'] ?? 'support@redatlearninghub.com';
-    $rSiteName = $siteName ?? $site_name        ?? $data['site_name']    ?? 'Redat Learning Hub';
+    // ── Resolve raw inputs (any of these forms can arrive) ────────────
+    $rawType = $type ?? $data['type'] ?? 'new';
+    $name_   = $name    ?? $user_name    ?? $data['name']         ?? 'there';
+    $email_  = $email   ?? $user_email   ?? $data['email']        ?? '';
+    $role_   = $role    ?? $user_role    ?? $data['role']         ?? 'student';
+    $pw_     = $password ?? $temp_password ?? $data['password']   ?? null;
+    $otp_    = $otp     ?? $data['otp']  ?? null;
+    $exp_    = $expiresInMinutes ?? $expires_in_minutes ?? $data['expires_in_minutes'] ?? 10;
+    $login_  = $loginUrl ?? $login_url   ?? $data['login_url']    ?? (config('app.url') . '/login');
+    $reset_  = $resetUrl ?? $reset_url   ?? $data['reset_url']    ?? (config('app.url') . '/reset-password');
+    $supp_   = $supportEmail ?? $support_email ?? $data['support_email'] ?? 'support@redatlearninghub.com';
+    $site_   = $siteName ?? $site_name   ?? $data['site_name']    ?? 'Redat Learning Hub';
+
+    // ── Map controller vocabulary → blade vocabulary ───────────────────
+    // AdminUserController sends: admin_created, password_reset, email_update,
+    // account_update, admin_updated, credentials_reminder.
+    // PasswordResetController sends: password_reset_otp.
+    // All are normalized to the four canonical types below.
+    $rType = match ($rawType) {
+        'admin_created'                                   => 'new',
+        'password_reset'                                  => 'reset',
+        'email_update', 'account_update', 'admin_updated' => 'update',
+        'credentials_reminder'                            => 'reminder',
+        'password_reset_otp'                              => 'password_reset_otp',
+        'new', 'update', 'reset', 'reminder'              => $rawType,
+        default                                           => 'update',
+    };
+
+    // ── Expose the canonical variables the template uses ─────────────
+    $rName     = $name_;
+    $rEmail    = $email_;
+    $rRole     = $role_;
+    $rPassword = $pw_;
+    $rOtp      = $otp_;
+    $rExpires  = $exp_;
+    $rLoginUrl = $login_;
+    $rResetUrl = $reset_;
+    $rSupport  = $supp_;
+    $rSiteName = $site_;
 
     $isOtpReset  = $rType === 'password_reset_otp';
     $hasPassword = !$isOtpReset && !empty($rPassword) && $rPassword !== 'Use your existing password';
 
+    // ── Header style per canonical type ──────────────────────────────
     $headerGradient = match ($rType) {
         'new'                          => 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
         'reset', 'password_reset_otp'  => 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
@@ -52,6 +81,8 @@
 
     <meta name="format-detection" content="telephone=no">
     <meta name="format-detection" content="date=no">
+    <meta name="format-detection" content="address=no">
+    <meta name="format-detection" content="email=no">
     <meta name="x-apple-disable-message-reformatting">
     <meta name="color-scheme" content="light">
     <meta name="supported-color-schemes" content="light">
@@ -71,8 +102,10 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6; color: #333;
-            background-color: #f7f9fc; width: 100% !important;
+            line-height: 1.6; color: #333333;
+            background-color: #f7f9fc;
+            -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%;
+            width: 100% !important;
         }
         a { color: #667eea !important; text-decoration: none; }
         a:hover { text-decoration: underline !important; }
@@ -83,6 +116,7 @@
         }
         .ExternalClass { width: 100%; }
         .ExternalClass, .ExternalClass p, .ExternalClass span, .ExternalClass font, .ExternalClass td, .ExternalClass div { line-height: 100%; }
+
         @media screen and (min-width: 600px) {
             .email-container { width: 600px !important; margin: 0 auto !important; }
         }
@@ -95,6 +129,7 @@
             .password-code { font-size: 22px !important; letter-spacing: 2px !important; }
             .otp-code { font-size: 32px !important; letter-spacing: 6px !important; }
         }
+
         .email-container {
             max-width: 600px; margin: 0 auto;
             background-color: #ffffff; border-radius: 12px;
@@ -164,6 +199,7 @@
             color: white !important; border-radius: 8px;
             font-weight: 600; margin: 20px 0;
         }
+
         .footer {
             background-color: #f1f3f4; padding: 25px; text-align: center;
             border-top: 1px solid #e0e0e0; color: #666; font-size: 14px;
@@ -181,15 +217,18 @@
     <![endif]-->
 
     <div class="email-container" role="article" aria-label="{{ $rSiteName }} account email">
+        {{-- =================== HEADER (varies by type) =================== --}}
         <div class="header" role="banner">
             <h1>{{ $headerIcon }}</h1>
             <p>{{ $headerSubtitle }}</p>
         </div>
 
+        {{-- =================== BODY =================== --}}
         <div class="content" role="main">
             <h2>Hello{{ $rName !== 'there' ? ', ' . $rName : '' }}!</h2>
 
             @if($rType === 'password_reset_otp')
+                {{-- ============== PASSWORD RESET OTP DESIGN ============== --}}
                 <p>We received a request to reset the password for your <strong>{{ $rSiteName }}</strong> account.</p>
 
                 <div class="otp-container" role="region" aria-label="Password Reset Code">
@@ -219,6 +258,7 @@
                     <a href="{{ $rResetUrl }}" class="button">Go to Reset Page</a>
                 </p>
             @else
+                {{-- ============== CREDENTIALS DESIGN (new/update/reset) ============== --}}
                 @if($rType === 'new')
                     <p>Your account has been created by an administrator. You can now sign in to <strong>{{ $rSiteName }}</strong> using the credentials below.</p>
                 @elseif($rType === 'reset')
@@ -300,6 +340,7 @@
             </div>
         </div>
 
+        {{-- =================== FOOTER =================== --}}
         <div class="footer" role="contentinfo">
             <p><strong>{{ $rSiteName }}</strong><br>Empowering education through technology</p>
             <p>
@@ -309,6 +350,11 @@
             <p style="font-size: 12px; margin-top: 20px; color: #999;">
                 This is an automated transactional message. Please do not reply to this email.<br>
                 © {{ date('Y') }} {{ $rSiteName }}. All rights reserved.
+            </p>
+            <p style="font-size: 11px; color: #999; margin-top: 15px;">
+                <a href="https://redatlearninghub.com/unsubscribe" style="color: #999; text-decoration: underline;">
+                    Unsubscribe from transactional emails
+                </a>
             </p>
         </div>
     </div>
